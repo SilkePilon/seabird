@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -35,6 +36,7 @@ func (w *Wizard) applyPage() *adw.NavigationPage {
 	body.Append(tabView)
 
 	logs := map[string]*nodeLog{}
+	tabPages := map[string]*adw.TabPage{}
 	for _, nodeID := range d.Plan.NodeOrder {
 		var node core.Node
 		for _, n := range d.Nodes {
@@ -47,6 +49,7 @@ func (w *Wizard) applyPage() *adw.NavigationPage {
 		logs[nodeID] = nl
 		page := tabView.Append(nl.widget())
 		page.SetTitle(labelOr(node))
+		tabPages[nodeID] = page
 	}
 
 	bottom := gtk.NewBox(gtk.OrientationHorizontal, 12)
@@ -61,10 +64,16 @@ func (w *Wizard) applyPage() *adw.NavigationPage {
 	bottom.Append(progress)
 
 	ctx, cancel := context.WithCancel(w.ctx)
+	aborted := &atomic.Bool{}
 
 	abort := gtk.NewButtonWithLabel("Abort")
 	abort.AddCSSClass("destructive-action")
-	abort.ConnectClicked(func() { cancel() })
+	abort.ConnectClicked(func() {
+		aborted.Store(true)
+		progress.SetText("Aborting…")
+		abort.SetSensitive(false)
+		cancel()
+	})
 	bottom.Append(abort)
 
 	body.Append(bottom)
@@ -72,7 +81,7 @@ func (w *Wizard) applyPage() *adw.NavigationPage {
 	page := w.pageShell("Apply", "", body, nil)
 
 	// Drive the executor on a goroutine; marshal events to the UI.
-	go w.runApply(ctx, cancel, logs, progress, abort)
+	go w.runApply(ctx, cancel, aborted, logs, tabView, tabPages, progress, abort)
 
 	return page
 }
@@ -80,7 +89,10 @@ func (w *Wizard) applyPage() *adw.NavigationPage {
 func (w *Wizard) runApply(
 	ctx context.Context,
 	cancel context.CancelFunc,
+	aborted *atomic.Bool,
 	logs map[string]*nodeLog,
+	tabView *adw.TabView,
+	tabPages map[string]*adw.TabPage,
 	progress *gtk.ProgressBar,
 	abort *gtk.Button,
 ) {
@@ -126,6 +138,11 @@ func (w *Wizard) runApply(
 	for ev := range exec.Events() {
 		ev := ev
 		glib.IdleAdd(func() {
+			if ev.Kind == "step.start" {
+				if page, ok := tabPages[ev.NodeID]; ok {
+					tabView.SetSelectedPage(page)
+				}
+			}
 			if nl, ok := logs[ev.NodeID]; ok {
 				nl.handle(ev)
 			}
@@ -138,10 +155,15 @@ func (w *Wizard) runApply(
 	}
 
 	runErr := <-doneCh
-	cancel()
+	if !aborted.Load() {
+		cancel()
+	}
 
 	// Did any step fail?
 	finalErr := runErr
+	if aborted.Load() {
+		finalErr = context.Canceled
+	}
 	for _, nl := range logs {
 		if nl.failed {
 			if finalErr == nil {
@@ -151,13 +173,15 @@ func (w *Wizard) runApply(
 	}
 
 	kubeconfig := exec.KubeconfigYAML()
-	success := finalErr == nil && kubeconfig != ""
+	success := !aborted.Load() && finalErr == nil && (!w.requireKubeconfig || kubeconfig != "")
 
 	glib.IdleAdd(func() {
 		abort.SetSensitive(false)
 		if success {
 			progress.SetFraction(1)
 			progress.SetText("Done")
+		} else if aborted.Load() {
+			progress.SetText("Canceled")
 		} else {
 			progress.SetText("Failed")
 		}
@@ -250,9 +274,11 @@ func (nl *nodeLog) appendLine(line string) {
 
 // stepStatusRow is the sidebar entry for a single step.
 type stepStatusRow struct {
-	row   *gtk.Box
-	icon  *gtk.Image
-	title *gtk.Label
+	row       *gtk.Box
+	indicator *adw.Bin
+	icon      *gtk.Image
+	spinner   *gtk.Spinner
+	title     *gtk.Label
 }
 
 func newStepStatusRow(st core.Step) *stepStatusRow {
@@ -261,46 +287,55 @@ func newStepStatusRow(st core.Step) *stepStatusRow {
 	row.SetMarginBottom(4)
 	row.SetMarginStart(8)
 	row.SetMarginEnd(8)
+	indicator := adw.NewBin()
+	indicator.SetSizeRequest(12, 12)
 	icon := gtk.NewImageFromIconName("content-loading-symbolic")
+	icon.SetPixelSize(12)
 	icon.AddCSSClass("dim-label")
-	row.Append(icon)
+	spinner := gtk.NewSpinner()
+	spinner.SetSizeRequest(12, 12)
+	indicator.SetChild(icon)
+	row.Append(indicator)
 	title := gtk.NewLabel(st.Title)
 	title.SetXAlign(0)
 	title.SetEllipsize(2) // PANGO_ELLIPSIZE_END
 	row.Append(title)
-	r := &stepStatusRow{row: row, icon: icon, title: title}
+	statusRow := &stepStatusRow{row: row, indicator: indicator, icon: icon, spinner: spinner, title: title}
 	if st.Skip {
-		r.setStatus(core.StatusSkipped, 0)
+		statusRow.setStatus(core.StatusSkipped, 0)
 	}
-	return r
+	return statusRow
 }
 
-func (r *stepStatusRow) widget() gtk.Widgetter { return r.row }
+func (statusRow *stepStatusRow) widget() gtk.Widgetter { return statusRow.row }
 
-func (r *stepStatusRow) setStatus(status core.StepStatus, exit int) {
-	r.icon.RemoveCSSClass("success")
-	r.icon.RemoveCSSClass("error")
-	r.icon.RemoveCSSClass("warning")
-	r.icon.RemoveCSSClass("dim-label")
+func (statusRow *stepStatusRow) setStatus(status core.StepStatus, exit int) {
+	statusRow.spinner.Stop()
+	statusRow.indicator.SetChild(statusRow.icon)
+	statusRow.icon.RemoveCSSClass("success")
+	statusRow.icon.RemoveCSSClass("error")
+	statusRow.icon.RemoveCSSClass("warning")
+	statusRow.icon.RemoveCSSClass("dim-label")
 	switch status {
 	case core.StatusRunning:
-		r.icon.SetFromIconName("content-loading-symbolic")
+		statusRow.indicator.SetChild(statusRow.spinner)
+		statusRow.spinner.Start()
 	case core.StatusDone:
-		r.icon.SetFromIconName("emblem-ok-symbolic")
-		r.icon.AddCSSClass("success")
+		statusRow.icon.SetFromIconName("verified-checkmark-symbolic")
+		statusRow.icon.AddCSSClass("success")
 	case core.StatusFailed:
-		r.icon.SetFromIconName("dialog-error-symbolic")
-		r.icon.AddCSSClass("error")
-		r.title.SetText(r.title.Text() + fmt.Sprintf(" (exit %d)", exit))
+		statusRow.icon.SetFromIconName("cross-small-symbolic")
+		statusRow.icon.AddCSSClass("error")
+		statusRow.title.SetText(statusRow.title.Text() + fmt.Sprintf(" (exit %d)", exit))
 	case core.StatusSkipped:
-		r.icon.SetFromIconName("action-unavailable-symbolic")
-		r.icon.AddCSSClass("dim-label")
+		statusRow.icon.SetFromIconName("action-unavailable-symbolic")
+		statusRow.icon.AddCSSClass("dim-label")
 	case core.StatusCanceled:
-		r.icon.SetFromIconName("process-stop-symbolic")
-		r.icon.AddCSSClass("warning")
+		statusRow.icon.SetFromIconName("process-stop-symbolic")
+		statusRow.icon.AddCSSClass("warning")
 	default:
-		r.icon.SetFromIconName("content-loading-symbolic")
-		r.icon.AddCSSClass("dim-label")
+		statusRow.icon.SetFromIconName("content-loading-symbolic")
+		statusRow.icon.AddCSSClass("dim-label")
 	}
 }
 

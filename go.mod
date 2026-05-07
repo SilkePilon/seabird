@@ -16,6 +16,7 @@ require (
 	github.com/jgillich/gotk4-vte v0.0.0-20240131190304-a4aecd4a69b4
 	github.com/leaanthony/go-ansi-parser v1.6.1
 	github.com/zmwangx/debounce v1.0.0
+	golang.org/x/crypto v0.50.0
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.36.0
@@ -71,7 +72,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

@@ -67,12 +67,27 @@ type ClusterPreferences struct {
 // It is rendered on the cluster card so the user can see at a glance how
 // the cluster was created and which nodes it spans.
 type BootstrapRecord struct {
-	Distribution string    // always "k3s" in v1
-	Version      string    // resolved k3s version
-	Channel      string    // user-selected channel (stable/latest/...)
-	ServerHost   string    // public host of the server node
-	AgentHosts   []string  // public hosts of any agent nodes
+	Distribution string   // always "k3s" in v1
+	Version      string   // resolved k3s version
+	Channel      string   // user-selected channel (stable/latest/...)
+	ServerHost   string   // public host of the server node
+	AgentHosts   []string // public hosts of any agent nodes
+	Nodes        []BootstrapNodeRecord
 	CreatedAt    time.Time
+}
+
+// BootstrapNodeRecord stores non-secret SSH metadata for nodes Seabird
+// bootstrapped. Secrets such as SSH passwords, sudo passwords, private-key
+// contents, and tokens are intentionally not persisted.
+type BootstrapNodeRecord struct {
+	Role           string
+	Host           string
+	Port           int
+	User           string
+	Auth           string
+	PrivateKeyPath string
+	Become         string
+	Label          string
 }
 
 // ClusterPreferencesFromKubeconfig builds a self-contained

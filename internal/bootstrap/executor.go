@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+const silentStepHeartbeat = 30 * time.Second
 
 // Executor runs a Plan against a set of pre-dialled SSH clients,
 // publishing every line of output and every lifecycle change as an Event
@@ -96,7 +99,15 @@ func (e *Executor) Run(ctx context.Context) error {
 
 			cmd := e.prepareCommand(st, client.Node())
 			status, code, err := e.runStep(ctx, client, st, cmd)
-			if status == StatusFailed || err != nil {
+			if err != nil {
+				if status == "" {
+					status = StatusFailed
+				}
+				e.emit(Event{NodeID: nodeID, StepID: st.ID, Kind: "step.end",
+					Status: status, ExitCode: code, Err: err, When: time.Now()})
+				return err
+			}
+			if status == StatusFailed {
 				e.emit(Event{NodeID: nodeID, StepID: st.ID, Kind: "step.end",
 					Status: StatusFailed, ExitCode: code, Err: err, When: time.Now()})
 				return nil // step failures are reported via events; not transport errors
@@ -143,7 +154,7 @@ func (e *Executor) prepareCommand(st Step, n Node) string {
 func (e *Executor) runStep(ctx context.Context, client *Client, st Step, cmd string) (StepStatus, int, error) {
 	e.emit(Event{NodeID: client.Node().ID, StepID: st.ID, Kind: "step.start", When: time.Now()})
 	e.emit(Event{NodeID: client.Node().ID, StepID: st.ID, Kind: "log",
-		Line: "$ " + summariseCommand(cmd)})
+		Line: "$ " + summariseCommand(redactCommand(cmd, client.Node(), e.NodeToken()))})
 
 	// For steps that capture output (token / kubeconfig), use Run so we
 	// have the full stdout. Stream lines for the UI as well.
@@ -183,7 +194,11 @@ func (e *Executor) runStep(ctx context.Context, client *Client, st Step, cmd str
 		return StatusDone, 0, nil
 	}
 
+	stopHeartbeat := e.startSilentStepHeartbeat(ctx, client.Node().ID, st.ID, st.Title)
+	defer stopHeartbeat.stop()
+
 	code, err := client.Stream(ctx, cmd, func(stream, line string) {
+		stopHeartbeat.activity()
 		e.emit(Event{NodeID: client.Node().ID, StepID: st.ID, Kind: stream, Line: line})
 	})
 	if err != nil {
@@ -196,6 +211,41 @@ func (e *Executor) runStep(ctx context.Context, client *Client, st Step, cmd str
 		return StatusFailed, code, fmt.Errorf("exit %d", code)
 	}
 	return StatusDone, 0, nil
+}
+
+type heartbeatStopper struct {
+	activity func()
+	stop     func()
+}
+
+func (e *Executor) startSilentStepHeartbeat(ctx context.Context, nodeID, stepID, title string) heartbeatStopper {
+	done := make(chan struct{})
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+
+	go func() {
+		ticker := time.NewTicker(silentStepHeartbeat)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case now := <-ticker.C:
+				silentFor := now.Sub(time.Unix(0, lastActivity.Load()))
+				if silentFor >= silentStepHeartbeat {
+					e.emit(Event{NodeID: nodeID, StepID: stepID, Kind: "log",
+						Line: fmt.Sprintf("still running: %s (no output for %s)", title, silentFor.Round(time.Second))})
+				}
+			}
+		}
+	}()
+
+	return heartbeatStopper{
+		activity: func() { lastActivity.Store(time.Now().UnixNano()) },
+		stop:     func() { close(done) },
+	}
 }
 
 func (e *Executor) emit(ev Event) {
@@ -225,6 +275,17 @@ func summariseCommand(cmd string) string {
 	}
 	if len(cmd) > 240 {
 		return cmd[:200] + "… (" + fmt.Sprintf("%d", len(cmd)) + " bytes)"
+	}
+	return cmd
+}
+
+func redactCommand(cmd string, n Node, token string) string {
+	for _, secret := range []string{n.Password, n.BecomePassword, token} {
+		if secret == "" {
+			continue
+		}
+		cmd = strings.ReplaceAll(cmd, secret, "[redacted]")
+		cmd = strings.ReplaceAll(cmd, shellQuote(secret), "'[redacted]'")
 	}
 	return cmd
 }

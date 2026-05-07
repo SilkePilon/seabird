@@ -144,7 +144,7 @@ func (w *WelcomeWindow) createContent(first bool) *adw.NavigationView {
 					glib.IdleAdd(func() {
 						spinner.Stop()
 						if err != nil {
-							widget.ShowErrorDialog(w.ctx, "Cluster connection failed", err)
+							w.showClusterConnectionFailedDialog(cluster, err)
 							return
 						}
 						app := w.Application()
@@ -192,6 +192,35 @@ func (w *WelcomeWindow) createContent(first bool) *adw.NavigationView {
 	return w.nav
 }
 
+func (w *WelcomeWindow) showClusterConnectionFailedDialog(cluster pubsub.Property[api.ClusterPreferences], err error) {
+	name := cluster.Value().Name
+	dialog := adw.NewAlertDialog("Cluster connection failed", err.Error())
+	dialog.AddResponse("ok", "Ok")
+	dialog.AddResponse("remove", "Remove Cluster")
+	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
+	dialog.Present(ctxt.MustFrom[*gtk.Window](w.ctx))
+	dialog.ConnectResponse(func(response string) {
+		if response != "remove" {
+			return
+		}
+
+		prefs := w.Preferences.Value()
+		for i, saved := range prefs.Clusters {
+			if saved == cluster {
+				prefs.Clusters = append(prefs.Clusters[:i], prefs.Clusters[i+1:]...)
+				w.Preferences.Pub(prefs)
+				if err := prefs.Save(); err != nil {
+					widget.ShowErrorDialog(w.ctx, "Could not save preferences", err)
+					return
+				}
+				w.content.SetChild(w.createContent(false))
+				w.toast.AddToast(adw.NewToast(fmt.Sprintf("Removed %s", name)))
+				return
+			}
+		}
+	})
+}
+
 func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	body := gtk.NewBox(gtk.OrientationVertical, 0)
 	navPage := adw.NewNavigationPage(body, "Purchase Seabird")
@@ -219,7 +248,7 @@ func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	content.Append(benefits)
 	for i, benefit := range []string{"Get direct email support", "Influence our roadmap", "No vendor lock-in", "No enterprise-only features", "Auditable code under MPL 2.0 license", "Contribute to open-source ecosystem"} {
 		box := gtk.NewBox(gtk.OrientationHorizontal, 4)
-		icon := gtk.NewImageFromIconName("emblem-ok-symbolic")
+		icon := gtk.NewImageFromIconName("verified-checkmark-symbolic")
 		icon.AddCSSClass("success")
 		box.Append(icon)
 		box.Append(gtk.NewLabel(benefit))
@@ -304,6 +333,18 @@ func (w *WelcomeWindow) bootstrapFinishHandler(ctx context.Context, draft *core.
 	}
 	for _, a := range draft.Agents() {
 		rec.AgentHosts = append(rec.AgentHosts, a.Host)
+	}
+	for _, node := range draft.Nodes {
+		rec.Nodes = append(rec.Nodes, api.BootstrapNodeRecord{
+			Role:           string(node.Role),
+			Host:           node.Host,
+			Port:           node.Port,
+			User:           node.User,
+			Auth:           string(node.Auth),
+			PrivateKeyPath: node.PrivateKeyPath,
+			Become:         string(node.Become),
+			Label:          node.Label,
+		})
 	}
 	cluster, err := api.ClusterPreferencesFromKubeconfig(draft.Options.ClusterName, cfg, rec)
 	if err != nil {

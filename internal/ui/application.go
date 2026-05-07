@@ -46,8 +46,13 @@ func NewApplication(version string) (*Application, error) {
 
 	style.Load()
 
+	flags := gio.ApplicationFlagsNone
+	if version == "dev" || os.Getenv("SEABIRD_DEV") == "1" {
+		flags = gio.ApplicationNonUnique
+	}
+
 	a := Application{
-		Application: adw.NewApplication("dev.skynomads.Seabird", gio.ApplicationFlagsNone),
+		Application: adw.NewApplication("dev.skynomads.Seabird", flags),
 		version:     version,
 	}
 

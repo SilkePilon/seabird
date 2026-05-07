@@ -63,6 +63,12 @@ func Parse(raw string) *NodeProbe {
 			p.AppArmor = v == "true"
 		case "firewall":
 			p.Firewall = v
+		case "net_iface":
+			p.NetworkInterface = v
+		case "net_kind":
+			p.NetworkKind = v
+		case "net_ip":
+			p.NetworkIP = v
 		case "has_k3s":
 			p.HasK3s = v == "true"
 		case "k3s_version":

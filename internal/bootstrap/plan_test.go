@@ -63,8 +63,24 @@ func TestBuildPlan_ServerOnly(t *testing.T) {
 	if !strings.Contains(install.Command, "INSTALL_K3S_CHANNEL=stable") {
 		t.Errorf("install command missing channel: %s", install.Command)
 	}
+	if !strings.Contains(install.Command, "INSTALL_K3S_SKIP_START=true") {
+		t.Errorf("install command should skip service start: %s", install.Command)
+	}
 	if !strings.Contains(install.Command, "curl -sfL https://get.k3s.io") {
 		t.Errorf("install command missing curl pipe: %s", install.Command)
+	}
+
+	var start *Step
+	for i := range steps {
+		if strings.HasPrefix(steps[i].ID, "start-server-") {
+			start = &steps[i]
+		}
+	}
+	if start == nil {
+		t.Fatal("missing start-server step")
+	}
+	if !strings.Contains(start.Command, "timeout 5m systemctl start k3s") || !strings.Contains(start.Command, "journalctl -u k3s") {
+		t.Errorf("start-server should timeout and print service logs: %s", start.Command)
 	}
 
 	// Firewall step should be present and use ufw.
@@ -84,14 +100,14 @@ func TestBuildPlan_ServerOnly(t *testing.T) {
 
 func TestBuildPlan_ServerAndAgent(t *testing.T) {
 	srv := NewNode(RoleServer)
-	srv.Host = "10.0.0.1"
+	srv.Host = "server.local"
 	ag := NewNode(RoleAgent)
 	ag.Host = "10.0.0.2"
 	d := &BootstrapDraft{
 		Options: K3sOptions{Channel: "stable"},
 		Nodes:   []Node{srv, ag},
 		Probes: map[string]*NodeProbe{
-			srv.ID: {Arch: "amd64", Firewall: "firewalld"},
+			srv.ID: {Arch: "amd64", Firewall: "firewalld", NetworkIP: "10.0.0.1"},
 			ag.ID:  {Arch: "amd64", Firewall: "firewalld"},
 		},
 	}
@@ -115,10 +131,23 @@ func TestBuildPlan_ServerAndAgent(t *testing.T) {
 		t.Fatal("missing install-agent step")
 	}
 	if !strings.Contains(install.Command, "K3S_URL=https://10.0.0.1:6443") {
-		t.Errorf("agent install missing K3S_URL: %s", install.Command)
+		t.Errorf("agent install should use probed server IP for K3S_URL: %s", install.Command)
 	}
 	if !strings.Contains(install.Command, TokenPlaceholder) {
 		t.Errorf("agent install missing token placeholder: %s", install.Command)
+	}
+
+	var start *Step
+	for i := range agentSteps {
+		if strings.HasPrefix(agentSteps[i].ID, "start-agent-") {
+			start = &agentSteps[i]
+		}
+	}
+	if start == nil {
+		t.Fatal("missing start-agent step")
+	}
+	if !strings.Contains(start.Command, "timeout 5m systemctl start k3s-agent") || !strings.Contains(start.Command, "journalctl -u k3s-agent") {
+		t.Errorf("start-agent should timeout and print service logs: %s", start.Command)
 	}
 
 	// Agent firewall opens 10250 but NOT 6443 (api server is server-only).
@@ -139,6 +168,70 @@ func TestBuildPlan_ServerAndAgent(t *testing.T) {
 	}
 }
 
+func TestBuildPlan_AgentFallsBackToServerHostWithoutProbeIP(t *testing.T) {
+	srv := NewNode(RoleServer)
+	srv.Host = "server.local"
+	ag := NewNode(RoleAgent)
+	ag.Host = "10.0.0.2"
+	d := &BootstrapDraft{
+		Options: K3sOptions{Channel: "stable"},
+		Nodes:   []Node{srv, ag},
+		Probes:  map[string]*NodeProbe{srv.ID: {Arch: "amd64"}, ag.ID: {Arch: "amd64"}},
+	}
+
+	p, err := BuildPlan(d)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	for _, step := range p.NodeSteps[ag.ID] {
+		if strings.HasPrefix(step.ID, "install-agent-") && !strings.Contains(step.Command, "K3S_URL=https://server.local:6443") {
+			t.Fatalf("agent install should fall back to server host: %s", step.Command)
+		}
+	}
+}
+
+func TestBuildUninstallPlan_AgentsBeforeServerAndCleansK3s(t *testing.T) {
+	srv := NewNode(RoleServer)
+	srv.Host = "10.0.0.1"
+	ag := NewNode(RoleAgent)
+	ag.Host = "10.0.0.2"
+	d := &BootstrapDraft{Nodes: []Node{srv, ag}}
+
+	p, err := BuildUninstallPlan(d)
+	if err != nil {
+		t.Fatalf("BuildUninstallPlan: %v", err)
+	}
+	if got := p.NodeOrder; len(got) != 2 || got[0] != ag.ID || got[1] != srv.ID {
+		t.Fatalf("node order wrong: %#v", got)
+	}
+
+	agentSteps := p.NodeSteps[ag.ID]
+	if len(agentSteps) == 0 {
+		t.Fatal("agent has no uninstall steps")
+	}
+	if !strings.Contains(agentSteps[0].Command, "k3s-agent-uninstall.sh") {
+		t.Errorf("agent uninstall should prefer agent uninstall script: %s", agentSteps[0].Command)
+	}
+
+	serverSteps := p.NodeSteps[srv.ID]
+	if len(serverSteps) == 0 {
+		t.Fatal("server has no uninstall steps")
+	}
+	if !strings.Contains(serverSteps[0].Command, "k3s-uninstall.sh") {
+		t.Errorf("server uninstall should prefer server uninstall script: %s", serverSteps[0].Command)
+	}
+
+	var cleanup string
+	for _, step := range serverSteps {
+		cleanup += step.Command + "\n"
+	}
+	for _, want := range []string{"/etc/rancher/k3s", "/var/lib/rancher/k3s", "/var/lib/kubelet", "rm -f /etc/fstab.bak", "seabird_k3s", "ufw --force delete", "10250"} {
+		if !strings.Contains(cleanup, want) {
+			t.Errorf("cleanup command missing %q: %s", want, cleanup)
+		}
+	}
+}
+
 func TestBuildPlan_SkipInstallWhenSameVersion(t *testing.T) {
 	d := newDraftWith(&NodeProbe{
 		Arch: "amd64", HasK3s: true, K3sVersion: "v1.31.4+k3s1",
@@ -153,9 +246,12 @@ func TestBuildPlan_SkipInstallWhenSameVersion(t *testing.T) {
 
 func TestServerConfigYAML_SANIncludesHost(t *testing.T) {
 	n := Node{Host: "k3s.example.com", Label: "srv1"}
-	yaml := serverConfigYAML(n, K3sOptions{TLSSANs: []string{"alt.example.com", ""}})
+	yaml := serverConfigYAML(n, K3sOptions{TLSSANs: []string{"alt.example.com", ""}}, &NodeProbe{NetworkIP: "10.0.0.1"})
 	if !strings.Contains(yaml, "k3s.example.com") {
 		t.Errorf("yaml missing server host SAN: %q", yaml)
+	}
+	if !strings.Contains(yaml, "10.0.0.1") {
+		t.Errorf("yaml missing server IP SAN: %q", yaml)
 	}
 	if !strings.Contains(yaml, "alt.example.com") {
 		t.Errorf("yaml missing user SAN: %q", yaml)
@@ -210,13 +306,13 @@ func keys[T any](m map[string]T) []string {
 
 func TestShellQuote(t *testing.T) {
 	cases := map[string]string{
-		"":              "''",
-		"abc":           "abc",
-		"a b":           "'a b'",
-		"it's":          `'it'\''s'`,
-		"v1.31.4+k3s1":  "v1.31.4+k3s1",
-		"/usr/local/x":  "/usr/local/x",
-		"a;rm -rf /":    "'a;rm -rf /'",
+		"":             "''",
+		"abc":          "abc",
+		"a b":          "'a b'",
+		"it's":         `'it'\''s'`,
+		"v1.31.4+k3s1": "v1.31.4+k3s1",
+		"/usr/local/x": "/usr/local/x",
+		"a;rm -rf /":   "'a;rm -rf /'",
 	}
 	for in, want := range cases {
 		if got := shellQuote(in); got != want {

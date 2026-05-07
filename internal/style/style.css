@@ -25,6 +25,30 @@ box.pill, label.pill {
   background-color: alpha(currentColor, 0.15);
 }
 
+image.probe-badge-icon.success {
+  color: @success_color;
+}
+
+image.probe-badge-icon.warning {
+  color: @warning_color;
+}
+
+image.probe-badge-icon.error {
+  color: @destructive_color;
+}
+
+spinner.probe-badge-spinner {
+  min-width: 10px;
+  min-height: 10px;
+  -gtk-icon-size: 10px;
+}
+
+box.benchmark-card {
+  padding: 12px;
+  border-radius: 8px;
+  background-color: alpha(currentColor, 0.06);
+}
+
 /* label.pill.success {
   background-color: @success_bg_color;
   color: @success_fg_color;

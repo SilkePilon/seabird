@@ -11,6 +11,7 @@ import (
 	"github.com/getseabird/seabird/api"
 	"github.com/getseabird/seabird/internal/ctxt"
 	"github.com/getseabird/seabird/internal/pubsub"
+	uibootstrap "github.com/getseabird/seabird/internal/ui/bootstrap"
 	"github.com/getseabird/seabird/internal/ui/common"
 	"github.com/getseabird/seabird/internal/util"
 	"github.com/getseabird/seabird/widget"
@@ -194,6 +195,27 @@ func (p *ClusterPrefPage) createActions() *adw.PreferencesGroup {
 	group.Add(load)
 
 	if util.Index(p.Preferences.Value().Clusters, p.prefs) >= 0 {
+		if p.prefs.Value().Bootstrap != nil {
+			uninstall := adw.NewActionRow()
+			uninstall.SetActivatable(true)
+			uninstall.AddSuffix(gtk.NewImageFromIconName("go-next-symbolic"))
+			uninstall.SetTitle("Uninstall from nodes")
+			uninstall.SetSubtitle("Remove k3s and related Kubernetes files from this bootstrapped cluster")
+			uninstall.AddCSSClass("error")
+			uninstall.ConnectActivated(func() {
+				wizard := uibootstrap.NewUninstallWizard(p.ctx, p.State, p.prefs.Value(), func() {
+					prefs := p.Preferences.Value()
+					if i := util.Index(prefs.Clusters, p.prefs); i >= 0 {
+						prefs.Clusters = append(prefs.Clusters[:i], prefs.Clusters[i+1:]...)
+						p.Preferences.Pub(prefs)
+						p.Parent().(*adw.NavigationView).Pop()
+					}
+				})
+				p.Parent().(*adw.NavigationView).Push(wizard.NavigationPage)
+			})
+			group.Add(uninstall)
+		}
+
 		delete := adw.NewActionRow()
 		delete.SetActivatable(true)
 		delete.SetSensitive(p.prefs.Value().Kubeconfig == nil)

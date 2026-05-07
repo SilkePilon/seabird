@@ -415,14 +415,14 @@ func (e *Core) CreateObjectProperties(ctx context.Context, _ *metav1.APIResource
 								if req == nil || req.IsZero() {
 									req = container.Resources.Limits.Memory()
 								}
-								row.AddSuffix(widget.NewResourceBar(mem, req, "memory-stick-symbolic"))
+								row.AddSuffix(widget.NewResourceBar(mem, req, "memory-symbolic"))
 							}
 							if cpu := metrics.Usage.Cpu(); cpu != nil {
 								req := container.Resources.Requests.Cpu()
 								if req == nil || req.IsZero() {
 									req = container.Resources.Limits.Cpu()
 								}
-								row.AddSuffix(widget.NewResourceBar(cpu, req, "cpu-symbolic"))
+								row.AddSuffix(widget.NewResourceBar(cpu, req, "processor-symbolic"))
 							}
 						}
 

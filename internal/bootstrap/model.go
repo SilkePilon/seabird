@@ -150,6 +150,10 @@ type NodeProbe struct {
 
 	Firewall string // "firewalld", "ufw", "nftables", "iptables", ""
 
+	NetworkInterface string // default route interface, e.g. "eth0", "enp1s0", "wlan0"
+	NetworkKind      string // "wired", "wireless", or ""
+	NetworkIP        string // first IPv4 address on NetworkInterface
+
 	HasK3s        bool
 	K3sVersion    string
 	HasContainerd bool

@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,40 +161,127 @@ func buildAuths(n Node) ([]ssh.AuthMethod, error) {
 		if len(n.PrivateKeyData) > 0 {
 			data = n.PrivateKeyData
 		} else if n.PrivateKeyPath != "" {
-			d, err := os.ReadFile(n.PrivateKeyPath)
+			d, err := readPrivateKeyFile(n.PrivateKeyPath)
 			if err != nil {
-				return nil, fmt.Errorf("read private key: %w", err)
+				return nil, err
 			}
 			data = d
 		} else {
 			return nil, errors.New("private key auth selected but no key supplied")
 		}
-		var (
-			signer ssh.Signer
-			err    error
-		)
-		if n.Password != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(data, []byte(n.Password))
-		} else {
-			signer, err = ssh.ParsePrivateKey(data)
-		}
+		signer, err := parsePrivateKey(data, n.Password)
 		if err != nil {
 			return nil, fmt.Errorf("parse private key: %w", err)
 		}
 		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil
 	case AuthAgent:
-		sock := os.Getenv("SSH_AUTH_SOCK")
-		if sock == "" {
-			return nil, errors.New("ssh-agent auth selected but SSH_AUTH_SOCK is not set")
-		}
-		conn, err := net.Dial("unix", sock)
-		if err != nil {
-			return nil, fmt.Errorf("dial ssh-agent: %w", err)
-		}
-		ag := agent.NewClient(conn)
-		return []ssh.AuthMethod{ssh.PublicKeysCallback(ag.Signers)}, nil
+		return agentAuths()
 	default:
 		return nil, fmt.Errorf("unknown auth method %q", n.Auth)
+	}
+}
+
+func readPrivateKeyFile(path string) ([]byte, error) {
+	if strings.HasSuffix(path, ".pub") {
+		privatePath := strings.TrimSuffix(path, ".pub")
+		if info, err := os.Stat(privatePath); err == nil && !info.IsDir() {
+			path = privatePath
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("check matching private key: %w", err)
+		} else {
+			return nil, fmt.Errorf("public key selected (%s); choose the matching private key file (%s)", path, privatePath)
+		}
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read private key: %w", err)
+	}
+	return data, nil
+}
+
+func parsePrivateKey(data []byte, passphrase string) (ssh.Signer, error) {
+	if passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(data, []byte(passphrase))
+	}
+	return ssh.ParsePrivateKey(data)
+}
+
+func agentAuths() ([]ssh.AuthMethod, error) {
+	var auths []ssh.AuthMethod
+	var reasons []string
+
+	sock := os.Getenv("SSH_AUTH_SOCK")
+	if sock == "" {
+		reasons = append(reasons, "SSH_AUTH_SOCK is not set")
+	} else {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("dial ssh-agent: %v", err))
+		} else {
+			ag := agent.NewClient(conn)
+			signers, err := ag.Signers()
+			if err != nil {
+				reasons = append(reasons, fmt.Sprintf("list ssh-agent keys: %v", err))
+			} else if len(signers) == 0 {
+				reasons = append(reasons, "ssh-agent has no keys loaded")
+			} else {
+				auths = append(auths, ssh.PublicKeys(signers...))
+			}
+		}
+	}
+
+	keyAuths, keyReasons := defaultIdentityAuths()
+	auths = append(auths, keyAuths...)
+	reasons = append(reasons, keyReasons...)
+	if len(auths) > 0 {
+		return auths, nil
+	}
+
+	if len(reasons) == 0 {
+		reasons = append(reasons, "no default private keys found")
+	}
+	return nil, fmt.Errorf("ssh-agent auth selected but no usable keys were found (%s)", strings.Join(reasons, "; "))
+}
+
+func defaultIdentityAuths() ([]ssh.AuthMethod, []string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, []string{fmt.Sprintf("find home directory: %v", err)}
+	}
+
+	var auths []ssh.AuthMethod
+	var reasons []string
+	for _, path := range defaultIdentityFiles(home) {
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("read %s: %v", path, err))
+			continue
+		}
+		signer, err := parsePrivateKey(data, "")
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("parse %s: %v", path, err))
+			continue
+		}
+		auths = append(auths, ssh.PublicKeys(signer))
+	}
+
+	if len(auths) == 0 && len(reasons) == 0 {
+		reasons = append(reasons, fmt.Sprintf("no default private keys found in %s", filepath.Join(home, ".ssh")))
+	}
+	return auths, reasons
+}
+
+func defaultIdentityFiles(home string) []string {
+	sshDir := filepath.Join(home, ".ssh")
+	return []string{
+		filepath.Join(sshDir, "id_ed25519"),
+		filepath.Join(sshDir, "id_ecdsa"),
+		filepath.Join(sshDir, "id_rsa"),
+		filepath.Join(sshDir, "id_dsa"),
 	}
 }
 

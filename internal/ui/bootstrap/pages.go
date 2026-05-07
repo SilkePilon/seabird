@@ -2,10 +2,14 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	core "github.com/getseabird/seabird/internal/bootstrap"
@@ -108,47 +112,7 @@ func (w *Wizard) intro() *adw.NavigationPage {
 // ---------- Nodes page --------------------------------------------------
 
 func (w *Wizard) nodesPage() *adw.NavigationPage {
-	rebuild := func() {}
-
-	render := func() *adw.PreferencesPage {
-		fresh := adw.NewPreferencesPage()
-		d := w.draft.Value()
-		for i := range d.Nodes {
-			idx := i
-			fresh.Add(w.nodeGroup(&d.Nodes[idx], func() {
-				w.draft.Pub(d)
-				rebuild()
-			}, func() {
-				if d.Nodes[idx].Role == core.RoleServer {
-					return
-				}
-				d.Nodes = append(d.Nodes[:idx], d.Nodes[idx+1:]...)
-				w.draft.Pub(d)
-				rebuild()
-			}))
-		}
-		add := adw.NewPreferencesGroup()
-		btn := gtk.NewButtonWithLabel("Add agent node")
-		btn.SetHAlign(gtk.AlignCenter)
-		btn.AddCSSClass("pill")
-		btn.ConnectClicked(func() {
-			d := w.draft.Value()
-			n := core.NewNode(core.RoleAgent)
-			n.Label = fmt.Sprintf("agent-%d", len(d.Agents())+1)
-			d.Nodes = append(d.Nodes, n)
-			w.draft.Pub(d)
-			rebuild()
-		})
-		add.Add(btn)
-		fresh.Add(add)
-		return fresh
-	}
-
-	bin := adw.NewBin()
-	bin.SetChild(render())
-	rebuild = func() { bin.SetChild(render()) }
-
-	return w.pageShell("Nodes", "Continue", bin, func() {
+	return w.nodesPageWithContinue("Continue", func() {
 		d := w.draft.Value()
 		for _, n := range d.Nodes {
 			if n.Host == "" {
@@ -162,6 +126,66 @@ func (w *Wizard) nodesPage() *adw.NavigationPage {
 		}
 		w.push(w.probePage())
 	})
+}
+
+func (w *Wizard) nodesPageWithContinue(continueLabel string, onContinue func()) *adw.NavigationPage {
+	rebuild := func(scrollToBottom bool) {}
+
+	render := func() *adw.PreferencesPage {
+		fresh := adw.NewPreferencesPage()
+		d := w.draft.Value()
+		for i := range d.Nodes {
+			idx := i
+			fresh.Add(w.nodeGroup(&d.Nodes[idx], func() {
+				w.draft.Pub(d)
+			}, func() {
+				if d.Nodes[idx].Role == core.RoleServer {
+					return
+				}
+				d.Nodes = append(d.Nodes[:idx], d.Nodes[idx+1:]...)
+				w.draft.Pub(d)
+				rebuild(false)
+			}))
+		}
+		add := adw.NewPreferencesGroup()
+		btn := gtk.NewButtonWithLabel("Add agent node")
+		btn.SetHAlign(gtk.AlignCenter)
+		btn.AddCSSClass("pill")
+		btn.ConnectClicked(func() {
+			d := w.draft.Value()
+			n := core.NewNode(core.RoleAgent)
+			n.Label = fmt.Sprintf("agent-%d", len(d.Agents())+1)
+			d.Nodes = append(d.Nodes, n)
+			w.draft.Pub(d)
+			rebuild(true)
+		})
+		add.Add(btn)
+		fresh.Add(add)
+		return fresh
+	}
+
+	bin := adw.NewBin()
+	bin.SetChild(render())
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetChild(bin)
+	rebuild = func(scrollToBottom bool) {
+		value := scroll.VAdjustment().Value()
+		bin.SetChild(render())
+		glib.IdleAdd(func() {
+			adj := scroll.VAdjustment()
+			if scrollToBottom {
+				adj.SetValue(adj.Upper() - adj.PageSize())
+				return
+			}
+			adj.SetValue(value)
+		})
+	}
+
+	return w.pageShellWithHeaderActions("Nodes", continueLabel, scroll, onContinue,
+		w.nodesImportButton(rebuild),
+		w.nodesExportButton(),
+	)
 }
 
 // nodeGroup is one PreferencesGroup form for editing a Node in place.
@@ -218,6 +242,35 @@ func (w *Wizard) nodeGroup(n *core.Node, commit func(), remove func()) *adw.Pref
 	keyPath.SetTitle("Private key path")
 	keyPath.SetText(n.PrivateKeyPath)
 	keyPath.ConnectChanged(func() { n.PrivateKeyPath = strings.TrimSpace(keyPath.Text()); commit() })
+	keyPicker := gtk.NewButtonFromIconName("document-open-symbolic")
+	keyPicker.AddCSSClass("flat")
+	keyPicker.SetTooltipText("Select private key file")
+	keyPicker.ConnectClicked(func() {
+		fileChooser := gtk.NewFileChooserNative("Select private key", w.parentWindow(), gtk.FileChooserActionOpen, "Open", "Cancel")
+		if home, err := os.UserHomeDir(); err == nil {
+			sshDir := filepath.Join(home, ".ssh")
+			if info, err := os.Stat(sshDir); err == nil && info.IsDir() {
+				_ = fileChooser.SetCurrentFolder(gio.NewFileForPath(sshDir))
+			}
+		}
+		fileChooser.ConnectResponse(func(responseId int) {
+			if responseId == int(gtk.ResponseAccept) && fileChooser.File() != nil {
+				selected := fileChooser.File().Path()
+				if strings.HasSuffix(selected, ".pub") {
+					privatePath := strings.TrimSuffix(selected, ".pub")
+					if info, err := os.Stat(privatePath); err == nil && !info.IsDir() {
+						selected = privatePath
+					} else {
+						w.errorToast(fmt.Errorf("select the private key file, not %s", filepath.Base(selected)))
+						return
+					}
+				}
+				keyPath.SetText(selected)
+			}
+		})
+		fileChooser.Show()
+	})
+	keyPath.AddSuffix(keyPicker)
 	group.Add(keyPath)
 
 	password := adw.NewPasswordEntryRow()
@@ -327,7 +380,36 @@ func (w *Wizard) probePage() *adw.NavigationPage {
 	results := adw.NewPreferencesGroup()
 	page.Add(results)
 
-	shell := w.pageShell("Probe", "Continue", body, func() {
+	reprobe := gtk.NewButtonFromIconName("view-refresh-symbolic")
+	reprobe.AddCSSClass("flat")
+	reprobe.SetTooltipText("Re-probe nodes")
+
+	startProbe := func() {
+		reprobe.SetSensitive(false)
+		banner.SetTitle("Inspecting nodes…")
+		banner.SetRevealed(true)
+		page.Remove(results)
+		results = adw.NewPreferencesGroup()
+		page.Add(results)
+		draft := w.draft.Value()
+		if draft.Probes == nil {
+			draft.Probes = map[string]*core.NodeProbe{}
+		}
+		for _, node := range draft.Nodes {
+			delete(draft.Probes, node.ID)
+		}
+		w.draft.Pub(draft)
+		rows := map[string]*probeRowState{}
+		for _, node := range draft.Nodes {
+			row := probePendingRow(node)
+			rows[node.ID] = row
+			results.Add(row.row)
+		}
+		go w.runProbes(banner, rows, func() { reprobe.SetSensitive(true) })
+	}
+	reprobe.ConnectClicked(startProbe)
+
+	shell := w.pageShellWithHeaderActions("Probe", "Continue", body, func() {
 		d := w.draft.Value()
 		for _, n := range d.Nodes {
 			p, ok := d.Probes[n.ID]
@@ -341,13 +423,13 @@ func (w *Wizard) probePage() *adw.NavigationPage {
 			}
 		}
 		w.push(w.planPage())
-	})
+	}, reprobe)
 
-	go w.runProbes(banner, results)
+	startProbe()
 	return shell
 }
 
-func (w *Wizard) runProbes(banner *adw.Banner, group *adw.PreferencesGroup) {
+func (w *Wizard) runProbes(banner *adw.Banner, rows map[string]*probeRowState, done func()) {
 	d := w.draft.Value()
 
 	type result struct {
@@ -360,7 +442,15 @@ func (w *Wizard) runProbes(banner *adw.Banner, group *adw.PreferencesGroup) {
 
 	store, err := core.DefaultKnownHosts()
 	if err != nil {
-		glib.IdleAdd(func() { w.errorToast(err) })
+		glib.IdleAdd(func() {
+			w.errorToast(err)
+			for _, row := range rows {
+				row.showError(err)
+			}
+			if done != nil {
+				done()
+			}
+		})
 		return
 	}
 
@@ -382,17 +472,20 @@ func (w *Wizard) runProbes(banner *adw.Banner, group *adw.PreferencesGroup) {
 		rr := r
 		glib.IdleAdd(func() {
 			draft := w.draft.Value()
+			row := rows[rr.node.ID]
+			if row == nil {
+				return
+			}
 			if rr.err != nil {
-				row := adw.NewActionRow()
-				row.SetTitle(labelOr(rr.node))
-				row.SetSubtitle(fmt.Sprintf("error: %s", rr.err))
-				row.AddCSSClass("error")
-				group.Add(row)
+				if rr.client != nil {
+					_ = rr.client.Close()
+				}
+				row.showError(rr.err)
 				return
 			}
 			draft.Probes[rr.node.ID] = rr.probe
 			w.draft.Pub(draft)
-			group.Add(probeSummaryRow(rr.node, rr.probe))
+			row.showProbe(rr.node, rr.probe)
 			if rr.client != nil {
 				_ = rr.client.Close()
 			}
@@ -402,21 +495,58 @@ func (w *Wizard) runProbes(banner *adw.Banner, group *adw.PreferencesGroup) {
 	glib.IdleAdd(func() {
 		banner.SetTitle("Probe complete")
 		banner.SetRevealed(false)
+		if done != nil {
+			done()
+		}
 	})
 }
 
-func probeSummaryRow(n core.Node, p *core.NodeProbe) *adw.ExpanderRow {
+type probeRowState struct {
+	row    *adw.ExpanderRow
+	status gtk.Widgetter
+}
+
+func probePendingRow(n core.Node) *probeRowState {
 	row := adw.NewExpanderRow()
 	row.SetTitle(labelOr(n))
-	row.SetSubtitle(fmt.Sprintf("%s %s · %s · %s", p.Distro, p.Version, p.Arch, p.PkgManager))
-	if p.IsBlocked() {
-		row.AddCSSClass("error")
-	} else if len(p.Warnings) > 0 {
-		row.AddCSSClass("warning")
-	} else {
-		row.AddCSSClass("success")
-	}
+	row.SetSubtitle(fmt.Sprintf("%s@%s", n.User, n.Host))
+	row.SetEnableExpansion(false)
+	row.SetExpanded(false)
+	state := &probeRowState{row: row}
+	state.setStatus(probeLoadingBadge())
+	return state
+}
 
+func (s *probeRowState) setStatus(status gtk.Widgetter) {
+	if s.status != nil {
+		s.row.Remove(s.status)
+	}
+	s.status = status
+	s.row.AddSuffix(status)
+}
+
+func (s *probeRowState) showError(err error) {
+	s.row.SetSubtitle(err.Error())
+	s.row.SetEnableExpansion(false)
+	s.row.SetExpanded(false)
+	s.setStatus(probeStatusBadge("cross-small-symbolic", "Failed", "error"))
+}
+
+func (s *probeRowState) showProbe(n core.Node, p *core.NodeProbe) {
+	s.row.SetSubtitle(fmt.Sprintf("%s %s · %s · %s", p.Distro, p.Version, p.Arch, p.PkgManager))
+	s.row.SetEnableExpansion(true)
+	if p.IsBlocked() {
+		s.setStatus(probeStatusBadge("cross-small-symbolic", "Blocked", "error"))
+	} else if len(p.Warnings) > 0 {
+		s.setStatus(probeStatusBadge("dialog-warning-symbolic", "Warnings", "warning"))
+	} else {
+		s.setStatus(probeStatusBadge("verified-checkmark-symbolic", "Ready", "success"))
+	}
+	addProbeDetails(s.row, p)
+	s.row.SetExpanded(false)
+}
+
+func addProbeDetails(row *adw.ExpanderRow, p *core.NodeProbe) {
 	add := func(title, val string) {
 		r := adw.NewActionRow()
 		r.SetTitle(title)
@@ -424,6 +554,7 @@ func probeSummaryRow(n core.Node, p *core.NodeProbe) *adw.ExpanderRow {
 		row.AddRow(r)
 	}
 	add("Kernel", p.Kernel)
+	add("Network", networkSummary(p))
 	add("Firewall", emptyDash(p.Firewall))
 	add("Existing k3s", boolStr(p.HasK3s, p.K3sVersion))
 	add("Existing containerd", boolStr(p.HasContainerd, ""))
@@ -436,17 +567,59 @@ func probeSummaryRow(n core.Node, p *core.NodeProbe) *adw.ExpanderRow {
 		r := adw.NewActionRow()
 		r.SetTitle("Warning")
 		r.SetSubtitle(msg)
-		r.AddCSSClass("warning")
 		row.AddRow(r)
 	}
 	for _, msg := range p.Blockers {
 		r := adw.NewActionRow()
 		r.SetTitle("Blocker")
 		r.SetSubtitle(msg)
-		r.AddCSSClass("error")
 		row.AddRow(r)
 	}
-	return row
+}
+
+func networkSummary(p *core.NodeProbe) string {
+	if p.NetworkInterface == "" && p.NetworkIP == "" {
+		return "—"
+	}
+
+	var parts []string
+	if p.NetworkInterface != "" {
+		iface := p.NetworkInterface
+		if p.NetworkKind != "" {
+			iface = fmt.Sprintf("%s (%s)", iface, p.NetworkKind)
+		}
+		parts = append(parts, iface)
+	}
+	if p.NetworkIP != "" {
+		parts = append(parts, p.NetworkIP)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func probeLoadingBadge() *gtk.Box {
+	badge := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	badge.SetVAlign(gtk.AlignCenter)
+	badge.AddCSSClass("pill")
+	spinner := gtk.NewSpinner()
+	spinner.SetSizeRequest(10, 10)
+	spinner.AddCSSClass("probe-badge-spinner")
+	spinner.Start()
+	badge.Append(spinner)
+	badge.Append(gtk.NewLabel("Probing"))
+	return badge
+}
+
+func probeStatusBadge(iconName, label, style string) *gtk.Box {
+	badge := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	badge.SetVAlign(gtk.AlignCenter)
+	badge.AddCSSClass("pill")
+	icon := gtk.NewImageFromIconName(iconName)
+	icon.SetPixelSize(12)
+	icon.AddCSSClass("probe-badge-icon")
+	icon.AddCSSClass(style)
+	badge.Append(icon)
+	badge.Append(gtk.NewLabel(label))
+	return badge
 }
 
 // makeHostKeyPrompt returns a HostKeyPrompt that opens an Adwaita
@@ -518,6 +691,56 @@ func (w *Wizard) planPage() *adw.NavigationPage {
 	})
 }
 
+func (w *Wizard) uninstallPlanPage() *adw.NavigationPage {
+	d := w.draft.Value()
+	plan, err := core.BuildUninstallPlan(d)
+	if err != nil {
+		w.errorToast(err)
+		return w.pageShell("Uninstall Plan", "", gtk.NewLabel("Failed to build uninstall plan"), nil)
+	}
+	d.Plan = plan
+	w.draft.Pub(d)
+
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	page := adw.NewPreferencesPage()
+	scroll.SetChild(page)
+
+	for _, nodeID := range plan.NodeOrder {
+		var node core.Node
+		for _, n := range d.Nodes {
+			if n.ID == nodeID {
+				node = n
+				break
+			}
+		}
+		group := adw.NewPreferencesGroup()
+		group.SetTitle(labelOr(node))
+		group.SetDescription(fmt.Sprintf("%s — %s@%s", node.Role, node.User, node.Host))
+		page.Add(group)
+
+		steps := plan.NodeSteps[nodeID]
+		for i := range steps {
+			idx := i
+			st := &steps[idx]
+			group.Add(stepExpanderRow(st, func() { plan.NodeSteps[nodeID][idx] = *st }))
+		}
+	}
+
+	return w.pageShell("Uninstall Plan", "Uninstall", scroll, func() {
+		dialog := adw.NewMessageDialog(w.parentWindow(), "Uninstall cluster from nodes?", "This will remove k3s, related Kubernetes data, CNI state, Seabird-created module config, and best-effort firewall rules from the listed nodes.")
+		dialog.AddResponse("cancel", "Cancel")
+		dialog.AddResponse("uninstall", "Uninstall")
+		dialog.SetResponseAppearance("uninstall", adw.ResponseDestructive)
+		dialog.Present()
+		dialog.ConnectResponse(func(response string) {
+			if response == "uninstall" {
+				w.push(w.applyPage())
+			}
+		})
+	})
+}
+
 func stepExpanderRow(st *core.Step, commit func()) *adw.ExpanderRow {
 	row := adw.NewExpanderRow()
 	row.SetTitle(st.Title)
@@ -530,15 +753,34 @@ func stepExpanderRow(st *core.Step, commit func()) *adw.ExpanderRow {
 	}
 	row.SetSubtitle(subtitle)
 
-	skip := gtk.NewSwitch()
-	skip.SetActive(st.Skip)
-	skip.SetVAlign(gtk.AlignCenter)
-	skip.ConnectStateSet(func(state bool) bool {
-		st.Skip = state
+	runState := gtk.NewLabel("")
+	runState.SetVAlign(gtk.AlignCenter)
+	runState.AddCSSClass("dim-label")
+	setRunState := func() {
+		if st.Skip {
+			runState.SetText("Will skip")
+			return
+		}
+		runState.SetText("Will run")
+	}
+	setRunState()
+
+	runSwitch := gtk.NewSwitch()
+	runSwitch.SetActive(!st.Skip)
+	runSwitch.SetVAlign(gtk.AlignCenter)
+	runSwitch.SetTooltipText("Run this step when enabled; skip it when disabled")
+	runSwitch.ConnectStateSet(func(state bool) bool {
+		st.Skip = !state
+		setRunState()
 		commit()
 		return false
 	})
-	row.AddSuffix(skip)
+
+	runToggle := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	runToggle.SetVAlign(gtk.AlignCenter)
+	runToggle.Append(runState)
+	runToggle.Append(runSwitch)
+	row.AddSuffix(runToggle)
 
 	body := gtk.NewBox(gtk.OrientationVertical, 6)
 	body.SetMarginTop(6)
@@ -583,9 +825,13 @@ func stepExpanderRow(st *core.Step, commit func()) *adw.ExpanderRow {
 func (w *Wizard) finishPage(success bool, kubeconfigYAML string, finalErr error) *adw.NavigationPage {
 	status := adw.NewStatusPage()
 	if success {
-		status.SetIconName("emblem-ok-symbolic")
-		status.SetTitle("Cluster ready")
-		status.SetDescription("Your new k3s cluster is up. Open it in Seabird or save the kubeconfig.")
+		status.SetIconName("verified-checkmark-symbolic")
+		status.SetTitle(w.finishSuccessTitle)
+		status.SetDescription(w.finishSuccessDescription)
+	} else if errors.Is(finalErr, context.Canceled) {
+		status.SetIconName("process-stop-symbolic")
+		status.SetTitle("Bootstrap canceled")
+		status.SetDescription("Apply was aborted before the cluster finished bootstrapping.")
 	} else {
 		status.SetIconName("dialog-error-symbolic")
 		status.SetTitle("Bootstrap failed")
@@ -600,7 +846,22 @@ func (w *Wizard) finishPage(success bool, kubeconfigYAML string, finalErr error)
 	actions.SetHAlign(gtk.AlignCenter)
 	status.SetChild(actions)
 
-	if success {
+	if success && kubeconfigYAML == "" {
+		done := gtk.NewButtonWithLabel("Done")
+		done.AddCSSClass("pill")
+		done.AddCSSClass("suggested-action")
+		done.ConnectClicked(func() {
+			if parent, ok := w.Parent().(*adw.NavigationView); ok {
+				parent.Pop()
+			}
+			if w.onApplySuccess != nil {
+				w.onApplySuccess()
+			}
+		})
+		actions.Append(done)
+	}
+
+	if success && kubeconfigYAML != "" {
 		open := gtk.NewButtonWithLabel("Open Cluster")
 		open.AddCSSClass("pill")
 		open.AddCSSClass("suggested-action")

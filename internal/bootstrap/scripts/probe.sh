@@ -70,6 +70,28 @@ elif command -v iptables >/dev/null 2>&1 && iptables -L -n 2>/dev/null | grep -q
 fi
 emit firewall "$fw"
 
+# --- default network path ---
+net_iface=""; net_ip=""; net_kind=""
+if command -v ip >/dev/null 2>&1; then
+  net_iface="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}')"
+  if [ -z "$net_iface" ]; then
+    net_iface="$(ip route show default 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}')"
+  fi
+  if [ -n "$net_iface" ]; then
+    net_ip="$(ip -o -4 addr show dev "$net_iface" scope global 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}')"
+  fi
+fi
+if [ -n "$net_iface" ]; then
+  if [ -d "/sys/class/net/$net_iface/wireless" ]; then
+    net_kind="wireless"
+  else
+    net_kind="wired"
+  fi
+fi
+emit net_iface "$net_iface"
+emit net_kind "$net_kind"
+emit net_ip "$net_ip"
+
 # --- existing software ---
 has_k3s=false; k3s_version=""
 if command -v k3s >/dev/null 2>&1; then

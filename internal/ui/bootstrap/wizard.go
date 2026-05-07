@@ -31,6 +31,11 @@ type Wizard struct {
 	// the user confirms on the Finish page. The welcome window passes a
 	// callback that adds the cluster to preferences and opens it.
 	onFinish FinishHandler
+
+	requireKubeconfig        bool
+	finishSuccessTitle       string
+	finishSuccessDescription string
+	onApplySuccess           func()
 }
 
 // FinishHandler is invoked from the Finish page once the bootstrap
@@ -44,10 +49,13 @@ type FinishHandler func(ctx context.Context, draft *core.BootstrapDraft, kubecon
 // adw.NavigationView (typically the welcome window's).
 func NewWizard(ctx context.Context, state *common.State, onFinish FinishHandler) *Wizard {
 	w := &Wizard{
-		ctx:      ctx,
-		state:    state,
-		draft:    pubsub.NewProperty(newDraft()),
-		onFinish: onFinish,
+		ctx:                      ctx,
+		state:                    state,
+		draft:                    pubsub.NewProperty(newDraft()),
+		onFinish:                 onFinish,
+		requireKubeconfig:        true,
+		finishSuccessTitle:       "Cluster ready",
+		finishSuccessDescription: "Your new k3s cluster is up. Open it in Seabird or save the kubeconfig.",
 	}
 
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -86,6 +94,10 @@ func (w *Wizard) push(p *adw.NavigationPage) { w.nav.Push(p) }
 // "Continue" button on the right that calls onContinue. The body
 // (a PreferencesPage typically) is wrapped in a clamped vertical box.
 func (w *Wizard) pageShell(title, continueLabel string, body gtk.Widgetter, onContinue func()) *adw.NavigationPage {
+	return w.pageShellWithHeaderActions(title, continueLabel, body, onContinue)
+}
+
+func (w *Wizard) pageShellWithHeaderActions(title, continueLabel string, body gtk.Widgetter, onContinue func(), beforeContinue ...gtk.Widgetter) *adw.NavigationPage {
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
 	page := adw.NewNavigationPage(box, title)
 
@@ -93,10 +105,15 @@ func (w *Wizard) pageShell(title, continueLabel string, body gtk.Widgetter, onCo
 	box.Append(header)
 
 	if onContinue != nil {
+		actions := gtk.NewBox(gtk.OrientationHorizontal, 6)
+		for _, action := range beforeContinue {
+			actions.Append(action)
+		}
 		btn := gtk.NewButtonWithLabel(continueLabel)
 		btn.AddCSSClass("suggested-action")
 		btn.ConnectClicked(onContinue)
-		header.PackEnd(btn)
+		actions.Append(btn)
+		header.PackEnd(actions)
 	}
 
 	box.Append(body)

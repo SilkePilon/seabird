@@ -88,7 +88,7 @@ func NewSingleView(ctx context.Context, state *common.ClusterState, editor *edit
 	header.PackEnd(delete)
 
 	edit := gtk.NewButton()
-	edit.SetIconName("file-pen-line-symbolic")
+	edit.SetIconName("text-editor-symbolic")
 	edit.SetTooltipText("Edit")
 	edit.ConnectClicked(func() {
 		gvk := view.SelectedObject.Value().GetObjectKind().GroupVersionKind()
@@ -101,7 +101,7 @@ func NewSingleView(ctx context.Context, state *common.ClusterState, editor *edit
 	header.PackEnd(edit)
 
 	pin := gtk.NewToggleButton()
-	pin.SetIconName("star-symbolic")
+	pin.SetIconName("star-outline-rounded-symbolic")
 	pin.SetTooltipText("Pin")
 	pin.ConnectClicked(func() {
 		if pin.Active() {

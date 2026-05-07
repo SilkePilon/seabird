@@ -1,0 +1,8 @@
+{
+  "go.alternateTools": {
+    "go": "/home/silke/sdk/go1.26.3/bin/go"
+  },
+  "terminal.integrated.env.linux": {
+    "PATH": "/home/silke/sdk/go1.26.3/bin:${env:PATH}"
+  }
+}

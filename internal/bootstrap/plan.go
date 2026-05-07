@@ -39,15 +39,52 @@ func BuildPlan(d *BootstrapDraft) (*Plan, error) {
 	}
 
 	// Server steps.
-	plan.NodeSteps[srv.ID] = serverSteps(*srv, d.Options, probeOf(d, srv.ID))
+	serverProbe := probeOf(d, srv.ID)
+	plan.NodeSteps[srv.ID] = serverSteps(*srv, d.Options, serverProbe)
 
 	// The agent install needs the server's hostname so it can build
 	// K3S_URL. We don't know the node-token at plan time — the executor
 	// will resolve it at runtime via a placeholder.
 	for _, a := range d.Agents() {
-		plan.NodeSteps[a.ID] = agentSteps(*a, *srv, d.Options, probeOf(d, a.ID))
+		plan.NodeSteps[a.ID] = agentSteps(*a, *srv, d.Options, probeOf(d, a.ID), serverJoinHost(*srv, serverProbe))
 	}
 
+	return plan, nil
+}
+
+// BuildUninstallPlan returns a destructive cleanup plan that removes k3s and
+// the files Seabird created while bootstrapping. Agents are cleaned before the
+// server so the control-plane node is available for as long as possible.
+func BuildUninstallPlan(d *BootstrapDraft) (*Plan, error) {
+	if d == nil {
+		return nil, fmt.Errorf("nil draft")
+	}
+	if len(d.Nodes) == 0 {
+		return nil, fmt.Errorf("no nodes defined")
+	}
+
+	plan := &Plan{
+		Options:   d.Options,
+		NodeSteps: map[string][]Step{},
+	}
+	for _, n := range d.Nodes {
+		if n.Role == RoleAgent {
+			plan.NodeOrder = append(plan.NodeOrder, n.ID)
+		}
+	}
+	for _, n := range d.Nodes {
+		if n.Role == RoleServer {
+			plan.NodeOrder = append(plan.NodeOrder, n.ID)
+		}
+	}
+	for _, nodeID := range plan.NodeOrder {
+		for _, n := range d.Nodes {
+			if n.ID == nodeID {
+				plan.NodeSteps[nodeID] = uninstallSteps(n)
+				break
+			}
+		}
+	}
 	return plan, nil
 }
 
@@ -72,7 +109,7 @@ func serverSteps(n Node, opts K3sOptions, p *NodeProbe) []Step {
 	// Write /etc/rancher/k3s/config.yaml from the user's options. We use
 	// a heredoc so the user sees the exact file contents in the Plan
 	// page.
-	cfg := serverConfigYAML(n, opts)
+	cfg := serverConfigYAML(n, opts, p)
 	s = append(s, Step{
 		ID:           uid("write-config"),
 		Title:        "Write /etc/rancher/k3s/config.yaml",
@@ -93,12 +130,21 @@ func serverSteps(n Node, opts K3sOptions, p *NodeProbe) []Step {
 	s = append(s, Step{
 		ID:           uid("install-server"),
 		Title:        "Install k3s server",
-		Description:  "Run the official k3s installer with the config above.",
+		Description:  "Run the official k3s installer with the config above without starting the service yet.",
 		Command:      installCmd,
 		RequiresRoot: true,
 		Effect:       EffectInstall,
 		Skip:         skip,
 		SkipReason:   skipReason,
+	})
+
+	s = append(s, Step{
+		ID:           uid("start-server"),
+		Title:        "Start k3s server",
+		Description:  "Start the k3s server service and show recent service logs if startup times out or fails.",
+		Command:      startServiceCommand("k3s"),
+		RequiresRoot: true,
+		Effect:       EffectSystem,
 	})
 
 	// Wait for the API server to become ready.
@@ -136,21 +182,36 @@ func serverSteps(n Node, opts K3sOptions, p *NodeProbe) []Step {
 	return s
 }
 
-func agentSteps(n Node, srv Node, opts K3sOptions, p *NodeProbe) []Step {
+func agentSteps(n Node, srv Node, opts K3sOptions, p *NodeProbe, joinHost string) []Step {
 	var s []Step
 	s = append(s, prepSteps(n, opts, p, RoleAgent)...)
 
-	url := fmt.Sprintf("https://%s:6443", srv.Host)
+	url := fmt.Sprintf("https://%s:6443", joinHost)
 	installCmd := installCommand(opts, RoleAgent, url, TokenPlaceholder)
 	s = append(s, Step{
 		ID:           uid("install-agent"),
 		Title:        "Install k3s agent",
-		Description:  "Join this node to the cluster as an agent. The token is fetched from the server right before this step runs.",
+		Description:  "Install the k3s agent service without starting it yet. The token is fetched from the server right before this step runs.",
 		Command:      installCmd,
 		RequiresRoot: true,
 		Effect:       EffectInstall,
 	})
+	s = append(s, Step{
+		ID:           uid("start-agent"),
+		Title:        "Start k3s agent",
+		Description:  "Start the k3s agent service and show recent service logs if it cannot join the server.",
+		Command:      startServiceCommand("k3s-agent"),
+		RequiresRoot: true,
+		Effect:       EffectSystem,
+	})
 	return s
+}
+
+func serverJoinHost(srv Node, probe *NodeProbe) string {
+	if probe != nil && probe.NetworkIP != "" {
+		return probe.NetworkIP
+	}
+	return srv.Host
 }
 
 // prepSteps are the OS-prep commands common to both server and agent
@@ -195,7 +256,7 @@ func prepSteps(n Node, opts K3sOptions, p *NodeProbe, role NodeRole) []Step {
 		Command:      "modprobe br_netfilter && modprobe overlay && printf 'br_netfilter\\noverlay\\n' > /etc/modules-load.d/k3s.conf",
 		RequiresRoot: true,
 		Effect:       EffectSystem,
-		Skip: p != nil && p.HasModBrNetfilter && p.HasModOverlay,
+		Skip:         p != nil && p.HasModBrNetfilter && p.HasModOverlay,
 		SkipReason: func() string {
 			if p != nil && p.HasModBrNetfilter && p.HasModOverlay {
 				return "both modules already loaded"
@@ -270,10 +331,66 @@ func firewallSteps(p *NodeProbe, role NodeRole) []Step {
 	}}
 }
 
+func uninstallSteps(n Node) []Step {
+	uninstallScript := "if [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then /usr/local/bin/k3s-agent-uninstall.sh; elif [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh; else echo 'k3s uninstall script not found; continuing cleanup'; fi"
+	if n.Role == RoleServer {
+		uninstallScript = "if [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh; elif [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then /usr/local/bin/k3s-agent-uninstall.sh; else echo 'k3s uninstall script not found; continuing cleanup'; fi"
+	}
+
+	return []Step{
+		{
+			ID:           uid("uninstall-k3s"),
+			Title:        "Run k3s uninstall script",
+			Description:  "Run the official k3s uninstall script for this node if it is present.",
+			Command:      uninstallScript,
+			RequiresRoot: true,
+			Effect:       EffectSystem,
+		},
+		{
+			ID:           uid("remove-k3s-files"),
+			Title:        "Remove k3s files and directories",
+			Description:  "Delete residual k3s, CNI, flannel, kubelet, and Seabird-created config paths.",
+			Command:      "rm -rf /etc/rancher/k3s /var/lib/rancher/k3s /var/lib/kubelet /var/lib/cni /etc/cni/net.d /opt/cni /run/k3s /run/flannel /var/run/flannel /etc/modules-load.d/k3s.conf /etc/sysctl.d/90-k3s.conf /usr/local/bin/k3s /usr/local/bin/k3s-*",
+			RequiresRoot: true,
+			Effect:       EffectSystem,
+		},
+		{
+			ID:           uid("restore-fstab"),
+			Title:        "Restore fstab backup if present",
+			Description:  "Restore /etc/fstab from /etc/fstab.bak when Seabird previously disabled swap.",
+			Command:      "if [ -f /etc/fstab.bak ]; then cp /etc/fstab.bak /etc/fstab && rm -f /etc/fstab.bak; else echo 'no /etc/fstab.bak found'; fi",
+			RequiresRoot: true,
+			Effect:       EffectFile,
+		},
+		{
+			ID:           uid("remove-firewall-rules"),
+			Title:        "Remove k3s firewall rules",
+			Description:  "Best-effort removal of firewall ports and nftables table Seabird may have added.",
+			Command:      uninstallFirewallCommand(),
+			RequiresRoot: true,
+			Effect:       EffectFirewall,
+		},
+	}
+}
+
+func uninstallFirewallCommand() string {
+	var cmds []string
+	for _, port := range []string{"6443/tcp", "10250/tcp", "8472/udp"} {
+		cmds = append(cmds, fmt.Sprintf("if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --permanent --remove-port=%s || true; fi", port))
+		cmds = append(cmds, fmt.Sprintf("if command -v ufw >/dev/null 2>&1; then ufw --force delete allow %s || true; fi", port))
+	}
+	cmds = append(cmds,
+		"if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --reload || true; fi",
+		"if command -v nft >/dev/null 2>&1; then nft delete table inet seabird_k3s || true; fi",
+		"if command -v iptables >/dev/null 2>&1; then iptables -D INPUT -p tcp --dport 6443 -j ACCEPT || true; iptables -D INPUT -p tcp --dport 10250 -j ACCEPT || true; iptables -D INPUT -p udp --dport 8472 -j ACCEPT || true; fi",
+	)
+	return strings.Join(cmds, "\n")
+}
+
 // ----- low-level helpers -------------------------------------------------
 
 func installCommand(opts K3sOptions, role NodeRole, k3sURL, token string) string {
-	var env []string
+	env := []string{"INSTALL_K3S_SKIP_START=true"}
 	if opts.Channel != "" {
 		env = append(env, "INSTALL_K3S_CHANNEL="+shellQuote(opts.Channel))
 	}
@@ -303,7 +420,16 @@ func installCommand(opts K3sOptions, role NodeRole, k3sURL, token string) string
 	return fmt.Sprintf("curl -sfL https://get.k3s.io | %s sh -s - %s", envStr, roleArg)
 }
 
-func serverConfigYAML(n Node, opts K3sOptions) string {
+func startServiceCommand(unit string) string {
+	quotedUnit := shellQuote(unit)
+	return fmt.Sprintf("timeout 5m systemctl start %s || { code=$?; echo %s; systemctl status %s --no-pager || true; journalctl -u %s -n 120 --no-pager || true; exit $code; }",
+		quotedUnit,
+		shellQuote("service failed to start within 5 minutes; recent logs follow"),
+		quotedUnit,
+		quotedUnit)
+}
+
+func serverConfigYAML(n Node, opts K3sOptions, p *NodeProbe) string {
 	var b strings.Builder
 	if opts.ClusterName != "" {
 		fmt.Fprintf(&b, "# cluster: %s\n", opts.ClusterName)
@@ -331,8 +457,12 @@ func serverConfigYAML(n Node, opts K3sOptions) string {
 	}
 
 	// TLS SANs always include the server's host so the rewritten
-	// kubeconfig validates, plus anything the user added explicitly.
+	// kubeconfig validates, plus the probed server IP used by agents and
+	// anything the user added explicitly.
 	sans := map[string]struct{}{n.Host: {}}
+	if p != nil && p.NetworkIP != "" {
+		sans[p.NetworkIP] = struct{}{}
+	}
 	for _, s := range opts.TLSSANs {
 		if s != "" {
 			sans[s] = struct{}{}
