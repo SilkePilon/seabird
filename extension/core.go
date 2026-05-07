@@ -12,6 +12,7 @@ import (
 	"github.com/getseabird/seabird/internal/style"
 	"github.com/getseabird/seabird/internal/util"
 	"github.com/getseabird/seabird/widget"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -451,6 +452,12 @@ func (e *Core) CreateObjectProperties(ctx context.Context, _ *metav1.APIResource
 		}
 
 		props = append(props, &api.GroupProperty{Name: "Containers", Children: containers})
+	case *appsv1.Deployment:
+		props = append(props, e.aggregatedLogsProperty(ctx, "Deployment Logs", object.Namespace, object.Spec.Selector))
+	case *appsv1.StatefulSet:
+		props = append(props, e.aggregatedLogsProperty(ctx, "StatefulSet Logs", object.Namespace, object.Spec.Selector))
+	case *appsv1.DaemonSet:
+		props = append(props, e.aggregatedLogsProperty(ctx, "DaemonSet Logs", object.Namespace, object.Spec.Selector))
 	case *corev1.ConfigMap:
 		var data []api.Property
 		for key, value := range object.Data {
@@ -575,4 +582,23 @@ func (e *Core) CreateObjectProperties(ctx context.Context, _ *metav1.APIResource
 	}
 
 	return props
+}
+
+func (e *Core) aggregatedLogsProperty(ctx context.Context, title, namespace string, selector *metav1.LabelSelector) api.Property {
+	return &api.GroupProperty{
+		Name: title,
+		Widget: func(w gtk.Widgetter, nav *adw.NavigationView) {
+			group, ok := w.(*adw.PreferencesGroup)
+			if !ok {
+				return
+			}
+			button := gtk.NewButtonWithLabel("Open")
+			button.AddCSSClass("flat")
+			button.SetTooltipText("Open aggregated logs for matching pods")
+			button.ConnectClicked(func() {
+				nav.Push(widget.NewAggregatedLogPage(ctx, e.Cluster, title, namespace, selector).NavigationPage)
+			})
+			group.SetHeaderSuffix(button)
+		},
+	}
 }
