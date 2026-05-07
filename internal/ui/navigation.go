@@ -245,7 +245,7 @@ func (n *Navigation) createResourceList(prefs api.ClusterPreferences) *gtk.ListB
 		if row == nil {
 			return
 		}
-		if row.Name() == "health" || row.Name() == "timeline" || row.Name() == "benchmark" || row.Name() == "rbac" {
+		if row.Name() == "health" || row.Name() == "timeline" || row.Name() == "benchmark" || row.Name() == "rbac" || row.Name() == "cost" {
 			pages := n.viewStack.Pages()
 			for i := 0; i < int(pages.NItems()); i++ {
 				page := pages.Item(uint(i)).Cast().(*gtk.StackPage)
@@ -332,6 +332,7 @@ func (n *Navigation) createResourceList(prefs api.ClusterPreferences) *gtk.ListB
 	n.resourceList.Append(n.createToolRow("timeline", "Timeline", "Events, restarts, and rollout problem history", "delay-small-symbolic"))
 	n.resourceList.Append(n.createToolRow("benchmark", "Benchmark", "Cluster performance and node resource results", "speedometer-symbolic"))
 	n.resourceList.Append(n.createToolRow("rbac", "RBAC", "Roles, bindings, subjects, and broad access", "permissions-generic-symbolic"))
+	n.resourceList.Append(n.createToolRow("cost", "Cost", "Waste, missing requests, and idle workload hints", "wallet-symbolic"))
 
 	if len(n.resources) > 0 {
 		header := n.createHeaderRow("Resources")
