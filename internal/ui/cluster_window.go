@@ -120,6 +120,7 @@ func NewClusterWindow(ctx context.Context, app *gtk.Application, state *common.C
 	viewStack.AddChild(NewHealthOverviewView(ctx, w.ClusterState)).SetName("health")
 	viewStack.AddChild(NewProblemTimelineView(ctx, w.ClusterState)).SetName("timeline")
 	viewStack.AddChild(NewBenchmarkView(ctx, w.ClusterState)).SetName("benchmark")
+	viewStack.AddChild(NewRBACViewer(ctx, w.ClusterState)).SetName("rbac")
 	viewStack.SetVisibleChild(w.listView)
 	paned.SetEndChild(viewStack)
 
