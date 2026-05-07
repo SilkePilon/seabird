@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/util"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"

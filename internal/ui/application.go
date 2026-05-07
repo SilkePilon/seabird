@@ -7,14 +7,14 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/icon"
-	"github.com/getseabird/seabird/internal/style"
-	"github.com/getseabird/seabird/internal/ui/common"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/icon"
+	"github.com/skynomads/orchestrator/internal/style"
+	"github.com/skynomads/orchestrator/internal/ui/common"
 	"k8s.io/klog/v2"
 )
 
-const ApplicationName = "Seabird"
+const ApplicationName = "Orchestrator"
 
 type Application struct {
 	*adw.Application
@@ -47,12 +47,12 @@ func NewApplication(version string) (*Application, error) {
 	style.Load()
 
 	flags := gio.ApplicationFlagsNone
-	if version == "dev" || os.Getenv("SEABIRD_DEV") == "1" {
+	if version == "dev" || os.Getenv("ORCHESTRATOR_DEV") == "1" {
 		flags = gio.ApplicationNonUnique
 	}
 
 	a := Application{
-		Application: adw.NewApplication("dev.skynomads.Seabird", flags),
+		Application: adw.NewApplication("dev.silkepilon.Orchestrator", flags),
 		version:     version,
 	}
 

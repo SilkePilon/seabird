@@ -21,7 +21,7 @@ const (
 )
 
 func Get() Style {
-	if style := os.Getenv("SEABIRD_STYLE"); style != "" {
+	if style := os.Getenv("ORCHESTRATOR_STYLE"); style != "" {
 		return Style(style)
 	}
 

@@ -10,8 +10,8 @@ import (
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/widget"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/tools/portforward"

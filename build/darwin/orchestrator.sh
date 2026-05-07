@@ -11,4 +11,4 @@ export XDG_DATA_DIRS="$LAUNCH_DIR/share"
 # add common bin paths for exec plugin discoverability
 export PATH="$PATH:/opt/homebrew/bin:/opt/local/bin"
 
-"$LAUNCH_DIR/seabird"
+"$LAUNCH_DIR/orchestrator"

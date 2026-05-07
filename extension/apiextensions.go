@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/pubsub"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/pubsub"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/jsonpath"

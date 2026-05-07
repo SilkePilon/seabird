@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getseabird/seabird/internal/pubsub"
-	"github.com/getseabird/seabird/internal/util"
+	"github.com/skynomads/orchestrator/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/util"
 	"github.com/zmwangx/debounce"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"

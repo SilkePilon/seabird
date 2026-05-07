@@ -27,13 +27,13 @@ type KnownHosts struct {
 }
 
 // DefaultKnownHosts returns a KnownHosts at
-// $XDG_CONFIG_HOME/seabird/known_hosts, creating the parent dir.
+// $XDG_CONFIG_HOME/orchestrator/known_hosts, creating the parent dir.
 func DefaultKnownHosts() (*KnownHosts, error) {
 	cd, err := os.UserConfigDir()
 	if err != nil {
 		return nil, err
 	}
-	return &KnownHosts{path: filepath.Join(cd, "seabird", "known_hosts")}, nil
+	return &KnownHosts{path: filepath.Join(cd, "orchestrator", "known_hosts")}, nil
 }
 
 // NewKnownHosts returns a KnownHosts backed by an explicit file path,

@@ -9,7 +9,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-const resourceIconPath = "/dev/skynomads/Seabird/icons"
+const resourceIconPath = "/dev/silkepilon/Orchestrator/icons"
 
 //go:generate go run cmd/main.go
 //go:generate glib-compile-resources --target=icon.gresource gresource.xml

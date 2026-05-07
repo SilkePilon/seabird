@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/getseabird/seabird/internal/ui"
+	"github.com/skynomads/orchestrator/internal/ui"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -17,7 +17,7 @@ var (
 )
 
 func main() {
-	if os.Getenv("SEABIRD_DEV") == "1" {
+	if os.Getenv("ORCHESTRATOR_DEV") == "1" {
 		go func() {
 			log.Println(http.ListenAndServe("localhost:6060", nil))
 		}()

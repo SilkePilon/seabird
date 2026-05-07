@@ -6,10 +6,10 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	core "github.com/getseabird/seabird/internal/bootstrap"
-	"github.com/getseabird/seabird/internal/pubsub"
-	"github.com/getseabird/seabird/internal/ui/common"
+	"github.com/skynomads/orchestrator/api"
+	core "github.com/skynomads/orchestrator/internal/bootstrap"
+	"github.com/skynomads/orchestrator/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/ui/common"
 )
 
 func NewUninstallWizard(ctx context.Context, state *common.State, cluster api.ClusterPreferences, onFinish func()) *Wizard {

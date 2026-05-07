@@ -12,8 +12,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	core "github.com/getseabird/seabird/internal/bootstrap"
-	"github.com/getseabird/seabird/widget"
+	core "github.com/skynomads/orchestrator/internal/bootstrap"
+	"github.com/skynomads/orchestrator/widget"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -728,7 +728,7 @@ func (w *Wizard) uninstallPlanPage() *adw.NavigationPage {
 	}
 
 	return w.pageShell("Uninstall Plan", "Uninstall", scroll, func() {
-		dialog := adw.NewMessageDialog(w.parentWindow(), "Uninstall cluster from nodes?", "This will remove k3s, related Kubernetes data, CNI state, Seabird-created module config, and best-effort firewall rules from the listed nodes.")
+		dialog := adw.NewMessageDialog(w.parentWindow(), "Uninstall cluster from nodes?", "This will remove k3s, related Kubernetes data, CNI state, Orchestrator-created module config, and best-effort firewall rules from the listed nodes.")
 		dialog.AddResponse("cancel", "Cancel")
 		dialog.AddResponse("uninstall", "Uninstall")
 		dialog.SetResponseAppearance("uninstall", adw.ResponseDestructive)

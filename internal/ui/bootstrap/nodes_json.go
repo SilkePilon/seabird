@@ -7,7 +7,7 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	core "github.com/getseabird/seabird/internal/bootstrap"
+	core "github.com/skynomads/orchestrator/internal/bootstrap"
 )
 
 type nodesJSON struct {
@@ -67,7 +67,7 @@ func (w *Wizard) nodesExportButton() *gtk.Button {
 
 func (w *Wizard) chooseNodesExportPath() {
 	chooser := gtk.NewFileChooserNative("Export nodes", w.parentWindow(), gtk.FileChooserActionSave, "Export", "Cancel")
-	chooser.SetCurrentName("seabird-nodes.json")
+	chooser.SetCurrentName("orchestrator-nodes.json")
 	chooser.ConnectResponse(func(responseID int) {
 		if responseID != int(gtk.ResponseAccept) || chooser.File() == nil {
 			return

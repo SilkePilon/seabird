@@ -10,8 +10,8 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/widget"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )

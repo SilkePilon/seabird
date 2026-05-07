@@ -1,22 +1,20 @@
-# Seabird
+# Orchestrator
 
-Seabird is a Kubernetes IDE designed for the GNOME desktop. Explore and manage
+Orchestrator is a Kubernetes IDE designed for the GNOME desktop. Explore and manage
 your clusters with a simple and intuitive interface. Equipped with essential
 features such as a terminal for executing commands, monitoring through logs and
 metrics, and a resource editor that conveniently places the API reference at
 your fingertips.
 
-![Screenshot](https://getseabird.github.io/images/screenshot.png)
+![Screenshot](https://skynomads.github.io/orchestrator/images/screenshot.png)
 
 ## Download
 
 Downloads for all platforms are available under
-[releases](https://github.com/getseabird/seabird/releases). On Linux, we
+[releases](https://github.com/skynomads/orchestrator/releases). On Linux, we
 recommend using the Flatpak package.
 
-<a href='https://flathub.org/apps/dev.skynomads.Seabird'>
-  <img width='140' alt='Download on Flathub' src='https://flathub.org/api/badge?locale=en'/>
-</a>
+[![Download on Flathub](https://flathub.org/api/badge?locale=en)](https://flathub.org/apps/dev.silkepilon.Orchestrator)
 
 ## Features
 
@@ -25,7 +23,7 @@ recommend using the Flatpak package.
 - **Auto-discovery** — automatically detects kubeconfig files at `~/.kube/config` and any paths in `$KUBECONFIG`
 - **Multiple clusters** — connect to and switch between multiple clusters from the welcome screen
 - **Manual configuration** — configure clusters by host URL, bearer token, TLS certificates, or exec-based auth
-- **Bootstrap new clusters** — install a fresh **k3s** cluster on remote SSH-reachable nodes through a guided wizard. Detects distro/package manager/firewall, generates an editable plan of every shell command that will run, streams live logs per node, and registers the resulting cluster in Seabird preferences on success.
+- **Bootstrap new clusters** — install a fresh **k3s** cluster on remote SSH-reachable nodes through a guided wizard. Detects distro/package manager/firewall, generates an editable plan of every shell command that will run, streams live logs per node, and registers the resulting cluster in Orchestrator preferences on success.
 - **Read-only mode** — optionally prevent any write operations against a cluster
 - **Keyboard shortcuts** — `Ctrl+N` opens a new window, `Ctrl+Q` disconnects from the current cluster
 
@@ -42,7 +40,7 @@ recommend using the Flatpak package.
 Clicking any resource opens a detail panel with rich, resource-specific properties:
 
 | Resource | Extra detail shown |
-|---|---|
+| --- | --- |
 | **Pod** | Per-container state, restart count, image, command, env vars (resolved from ConfigMaps/Secrets), ports, CPU & memory usage vs. requests/limits |
 | **Deployment / ReplicaSet / StatefulSet** | Linked pod list with status icons; StatefulSets also show volume claim templates |
 | **Node** | Architecture, container runtime, kernel, kubelet version, OS image, allocatable CPU & memory, pod list |
@@ -81,7 +79,7 @@ Clicking any resource opens a detail panel with rich, resource-specific properti
 
 - **Color scheme** — choose Default, Light, or Dark
 - **Cluster settings** — add, remove, or reconfigure clusters at any time
-- Preferences are saved automatically to `$XDG_CONFIG_HOME/seabird/prefs.json`
+- Preferences are saved automatically to `$XDG_CONFIG_HOME/orchestrator/prefs.json`
 
 ### Other
 
@@ -92,16 +90,16 @@ Clicking any resource opens a detail panel with rich, resource-specific properti
 
 ### Prerequisites
 
-Seabird connects to Kubernetes clusters using standard kubeconfig files. Make
+Orchestrator connects to Kubernetes clusters using standard kubeconfig files. Make
 sure you have a valid kubeconfig at `~/.kube/config` or exported in
-`$KUBECONFIG` before launching. Seabird will detect all contexts automatically.
+`$KUBECONFIG` before launching. Orchestrator will detect all contexts automatically.
 
 To see CPU and memory metrics, your cluster must have
 [metrics-server](https://github.com/kubernetes-sigs/metrics-server) installed.
 
 ### First Launch
 
-1. Launch Seabird. The welcome screen lists all clusters found in your kubeconfig.
+1. Launch Orchestrator. The welcome screen lists all clusters found in your kubeconfig.
 2. Click a cluster to connect. A spinner indicates the connection attempt.
 3. Once connected, the main window opens with the resource sidebar on the left.
 4. Use the sidebar to navigate resource types. Click any row to open its detail panel.
@@ -148,18 +146,18 @@ go run .
 ## Reporting Issues
 
 If you experience problems, please open an
-[issue](https://github.com/getseabird/seabird/issues). Try to include as much
+[issue](https://github.com/skynomads/orchestrator/issues). Try to include as much
 information as possible, such as version, operating system and reproduction
 steps.
 
 For feature suggestions, please create a
-[discussion](https://github.com/getseabird/seabird/discussions). If you have a
+[discussion](https://github.com/skynomads/orchestrator/discussions). If you have a
 concrete vision for the feature, open an issue instead and use the proposal
 template.
 
 ## License
 
-Seabird is available under the terms of the Mozilla Public License v2, a copy of
+Orchestrator is available under the terms of the Mozilla Public License v2, a copy of
 the license is distributed in the LICENSE file.
 
 Note: This is paid software with an unlimited free trial.

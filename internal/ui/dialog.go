@@ -8,9 +8,9 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/widget"
 )
 
 func showClusterPrefsErrorDialog(ctx context.Context, prefs api.ClusterPreferences) bool {
@@ -29,7 +29,7 @@ func showClusterPrefsErrorDialog(ctx context.Context, prefs api.ClusterPreferenc
 			dialog.ConnectResponse(func(response string) {
 				switch response {
 				case "docs":
-					gtk.ShowURI(w, "https://getseabird.github.io/docs/credential-plugins/", gdk.CURRENT_TIME)
+					gtk.ShowURI(w, "https://skynomads.github.io/orchestrator/docs/credential-plugins/", gdk.CURRENT_TIME)
 				}
 			})
 			dialog.Present(w)

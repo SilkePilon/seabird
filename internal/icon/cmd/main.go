@@ -12,8 +12,8 @@ func main() {
 	xml :=
 		`<?xml version="1.0" encoding="UTF-8"?>
 	<gresources>
-		<gresource prefix="/dev/skynomads/Seabird/icons/scalable/actions/">
-			<file preprocess="xml-stripblanks">seabird.svg</file>
+		<gresource prefix="/dev/silkepilon/Orchestrator/icons/scalable/actions/">
+			<file preprocess="xml-stripblanks">orchestrator.svg</file>
 `
 
 	icons := map[string]string{}

@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>dev.skynomads.Seabird</id>
-  <name>Seabird</name>
+  <id>dev.silkepilon.Orchestrator</id>
+  <name>Orchestrator</name>
   <summary>Work with Kubernetes</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MPL-2.0</project_license>
   <description>
     <p>
-      Seabird is a Kubernetes IDE designed for the GNOME desktop. Explore and
+      Orchestrator is a Kubernetes IDE designed for the GNOME desktop. Explore and
       manage your clusters with a simple and intuitive interface. Equipped with
       essential features such as a terminal for executing commands, monitoring through
       logs and metrics, and a resource editor that conveniently places the API
       reference at your fingertips.
     </p>
   </description>
-  <launchable type="desktop-id">dev.skynomads.Seabird.desktop</launchable>
+  <launchable type="desktop-id">dev.silkepilon.Orchestrator.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <caption>Seabird main application window</caption>
-      <image type="source">https://getseabird.github.io/images/screenshot.png</image>
+      <caption>Orchestrator main application window</caption>
+      <image type="source">https://skynomads.github.io/orchestrator/images/screenshot.png</image>
     </screenshot>
   </screenshots>
-  <url type="homepage">https://getseabird.github.io/</url>
-  <developer_name>Seabird Project</developer_name>
+  <url type="homepage">https://skynomads.github.io/orchestrator/</url>
+  <developer_name>Orchestrator Project</developer_name>
   <branding>
     <color type="primary" scheme_preference="light">#87a8ee</color>
     <color type="primary" scheme_preference="dark">#87a8ee</color>
@@ -30,13 +30,13 @@
   <content_rating type="oars-1.1" />
   <releases>
     <release version="v0.6.0" date="2025-08-13">
-      <url>https://github.com/getseabird/seabird/releases/tag/v0.6.0</url>
+      <url>https://github.com/skynomads/orchestrator/releases/tag/v0.6.0</url>
     </release>
     <release version="v0.5.1" date="2024-07-18">
-      <url>https://github.com/getseabird/seabird/releases/tag/v0.5.1</url>
+      <url>https://github.com/skynomads/orchestrator/releases/tag/v0.5.1</url>
     </release>
     <release version="v0.5.0" date="2024-07-18">
-      <url>https://github.com/getseabird/seabird/releases/tag/v0.5.0</url>
+      <url>https://github.com/skynomads/orchestrator/releases/tag/v0.5.0</url>
     </release>
     <release version="v0.4.2" date="2024-07-10" />
     <release version="v0.4.1" date="2024-07-10" />

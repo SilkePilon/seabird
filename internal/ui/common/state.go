@@ -3,11 +3,11 @@ package common
 import (
 	"context"
 
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/extension"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/internal/pubsub"
 	"github.com/go-logr/logr"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/extension"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/internal/pubsub"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"

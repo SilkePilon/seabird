@@ -17,14 +17,14 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/icon"
-	"github.com/getseabird/seabird/internal/pubsub"
-	"github.com/getseabird/seabird/internal/style"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/internal/ui/editor"
-	"github.com/getseabird/seabird/internal/ui/single"
-	"github.com/getseabird/seabird/internal/util"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/icon"
+	"github.com/skynomads/orchestrator/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/style"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/internal/ui/editor"
+	"github.com/skynomads/orchestrator/internal/ui/single"
+	"github.com/skynomads/orchestrator/internal/util"
 	"github.com/zmwangx/debounce"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -318,14 +318,6 @@ func (n *Navigation) createResourceList(prefs api.ClusterPreferences) *gtk.ListB
 		}
 	}
 
-	if len(n.favourites) > 0 {
-		header := n.createHeaderRow("Favourites")
-		n.resourceList.Append(header)
-		for _, row := range n.favourites {
-			n.resourceList.Append(row)
-		}
-	}
-
 	thematic := n.createHeaderRow("Tools")
 	n.resourceList.Append(thematic)
 	n.resourceList.Append(n.createToolRow("health", "Health", "Cluster status, workload issues, and warning events", "heart-outline-thick-symbolic"))
@@ -334,6 +326,14 @@ func (n *Navigation) createResourceList(prefs api.ClusterPreferences) *gtk.ListB
 	n.resourceList.Append(n.createToolRow("rbac", "RBAC", "Roles, bindings, subjects, and broad access", "permissions-generic-symbolic"))
 	n.resourceList.Append(n.createToolRow("cost", "Cost", "Waste, missing requests, and idle workload hints", "wallet-symbolic"))
 	n.resourceList.Append(n.createToolRow("security", "Security", "Workload posture and best-practice checks", "shield-warning-symbolic"))
+
+	if len(n.favourites) > 0 {
+		header := n.createHeaderRow("Favourites")
+		n.resourceList.Append(header)
+		for _, row := range n.favourites {
+			n.resourceList.Append(row)
+		}
+	}
 
 	if len(n.resources) > 0 {
 		header := n.createHeaderRow("Resources")

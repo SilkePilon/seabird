@@ -225,7 +225,7 @@ func TestBuildUninstallPlan_AgentsBeforeServerAndCleansK3s(t *testing.T) {
 	for _, step := range serverSteps {
 		cleanup += step.Command + "\n"
 	}
-	for _, want := range []string{"/etc/rancher/k3s", "/var/lib/rancher/k3s", "/var/lib/kubelet", "rm -f /etc/fstab.bak", "seabird_k3s", "ufw --force delete", "10250"} {
+	for _, want := range []string{"/etc/rancher/k3s", "/var/lib/rancher/k3s", "/var/lib/kubelet", "rm -f /etc/fstab.bak", "orchestrator_k3s", "ufw --force delete", "10250"} {
 		if !strings.Contains(cleanup, want) {
 			t.Errorf("cleanup command missing %q: %s", want, cleanup)
 		}

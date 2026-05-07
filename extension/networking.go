@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/util"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/util"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"

@@ -21,6 +21,6 @@ body:
     attributes:
       label: System information
       description: |
-        Seabird version, operating system, architecture and other relevant information.
+        Orchestrator version, operating system, architecture and other relevant information.
     validations:
       required: true

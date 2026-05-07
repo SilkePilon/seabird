@@ -16,13 +16,13 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	core "github.com/getseabird/seabird/internal/bootstrap"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/internal/pubsub"
-	"github.com/getseabird/seabird/internal/ui/bootstrap"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/api"
+	core "github.com/skynomads/orchestrator/internal/bootstrap"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/ui/bootstrap"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/widget"
 	"k8s.io/klog/v2"
 )
 
@@ -45,7 +45,7 @@ func NewWelcomeWindow(ctx context.Context, app *gtk.Application, state *common.S
 		State:             state,
 	}
 	w.SetApplication(app)
-	w.SetIconName("seabird")
+	w.SetIconName("orchestrator")
 	w.SetDefaultSize(600, 650)
 	w.toast = adw.NewToastOverlay()
 	w.toast.SetChild(w.content)
@@ -154,14 +154,14 @@ func (w *WelcomeWindow) createContent(first bool) *adw.NavigationView {
 				}()
 			})
 			group.Add(row)
-			if os.Getenv("SEABIRD_DEV") == "1" && i == 0 {
+			if os.Getenv("ORCHESTRATOR_DEV") == "1" && i == 0 {
 				defer row.Activate()
 			}
 		}
 	} else {
 		status := adw.NewStatusPage()
-		status.SetIconName("seabird")
-		status.SetTitle("Welcome to Seabird")
+		status.SetIconName("orchestrator")
+		status.SetTitle("Welcome to Orchestrator")
 		status.SetDescription("Connect an existing Kubernetes cluster, or create a new one.")
 
 		connect := gtk.NewButtonWithLabel("Connect Cluster")
@@ -223,7 +223,7 @@ func (w *WelcomeWindow) showClusterConnectionFailedDialog(cluster pubsub.Propert
 
 func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	body := gtk.NewBox(gtk.OrientationVertical, 0)
-	navPage := adw.NewNavigationPage(body, "Purchase Seabird")
+	navPage := adw.NewNavigationPage(body, "Purchase Orchestrator")
 
 	header := adw.NewHeaderBar()
 	header.SetShowBackButton(false)
@@ -234,9 +234,9 @@ func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	body.Append(clamp)
 
 	status := adw.NewStatusPage()
-	status.SetIconName("seabird")
+	status.SetIconName("orchestrator")
 	status.SetTitle("This Bird Needs Your Help")
-	status.SetDescription("Seabird is free software with no limitations. To maintain free and open access, we need your support.")
+	status.SetDescription("Orchestrator is free software with no limitations. To maintain free and open access, we need your support.")
 	clamp.SetChild(status)
 
 	content := gtk.NewBox(gtk.OrientationVertical, 24)
@@ -264,7 +264,7 @@ func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	later.AddCSSClass("pill")
 	purchase := gtk.NewButton()
 	purchase.ConnectClicked(func() {
-		gtk.ShowURI(&w.Window, "https://seabird.lemonsqueezy.com/checkout/buy/7cbd80a0-701b-46cc-b61f-c46cc339dca5", gdk.CURRENT_TIME)
+		gtk.ShowURI(&w.Window, "https://orchestrator.lemonsqueezy.com/checkout/buy/7cbd80a0-701b-46cc-b61f-c46cc339dca5", gdk.CURRENT_TIME)
 	})
 	purchase.SetHAlign(gtk.AlignCenter)
 	purchase.SetLabel("Purchase Now")
@@ -288,7 +288,7 @@ func (w *WelcomeWindow) createPurchasePage() *adw.NavigationPage {
 	entry.SetTitle("License key")
 	entry.SetShowApplyButton(true)
 	entry.ConnectApply(func() {
-		res, raw, err := lemonsqueezy.New().Licenses.Activate(w.ctx, strings.TrimSpace(entry.Text()), "Seabird")
+		res, raw, err := lemonsqueezy.New().Licenses.Activate(w.ctx, strings.TrimSpace(entry.Text()), "Orchestrator")
 		switch {
 		case err != nil:
 			klog.Infof("%v", err)
@@ -376,7 +376,7 @@ func (w *WelcomeWindow) showUpdateNotification() {
 		return
 	}
 
-	res, err := http.Get("https://api.github.com/repos/getseabird/seabird/releases")
+	res, err := http.Get("https://api.github.com/repos/skynomads/orchestrator/releases")
 	if err != nil {
 		return
 	}
@@ -415,7 +415,7 @@ func (w *WelcomeWindow) showUpdateNotification() {
 		group := gio.NewSimpleActionGroup()
 		action := gio.NewSimpleAction("releases", nil)
 		action.ConnectActivate(func(idx *glib.Variant) {
-			gtk.ShowURI(&w.Window, "https://github.com/getseabird/seabird/releases", gdk.CURRENT_TIME)
+			gtk.ShowURI(&w.Window, "https://github.com/skynomads/orchestrator/releases", gdk.CURRENT_TIME)
 		})
 		group.AddAction(action)
 		w.InsertActionGroup("welcome", group)

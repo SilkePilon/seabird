@@ -266,11 +266,11 @@ func (e *Executor) emit(ev Event) {
 // summariseCommand makes very long commands readable in the event log
 // by replacing heredoc bodies with their byte length.
 func summariseCommand(cmd string) string {
-	if i := strings.Index(cmd, "<<'EOF_SEABIRD'"); i >= 0 {
-		j := strings.LastIndex(cmd, "EOF_SEABIRD")
+	if i := strings.Index(cmd, "<<'EOF_ORCHESTRATOR'"); i >= 0 {
+		j := strings.LastIndex(cmd, "EOF_ORCHESTRATOR")
 		if j > i {
-			body := cmd[i+len("<<'EOF_SEABIRD'") : j]
-			return cmd[:i] + fmt.Sprintf("<<'EOF_SEABIRD' (%d bytes) EOF_SEABIRD", len(strings.TrimSpace(body)))
+			body := cmd[i+len("<<'EOF_ORCHESTRATOR'") : j]
+			return cmd[:i] + fmt.Sprintf("<<'EOF_ORCHESTRATOR' (%d bytes) EOF_ORCHESTRATOR", len(strings.TrimSpace(body)))
 		}
 	}
 	if len(cmd) > 240 {

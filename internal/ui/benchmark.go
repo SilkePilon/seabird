@@ -17,9 +17,9 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/widget"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +39,7 @@ const (
 )
 
 var benchmarkNameRe = regexp.MustCompile(`[^a-z0-9-]+`)
-var benchmarkThreadsRe = regexp.MustCompile(`seabird_threads=([0-9]+)`)
+var benchmarkThreadsRe = regexp.MustCompile(`orchestrator_threads=([0-9]+)`)
 var benchmarkEventsRe = regexp.MustCompile(`events per second:\s*([0-9]+(?:\.[0-9]+)?)`)
 var benchmarkTotalTimeRe = regexp.MustCompile(`total time:\s*([0-9]+(?:\.[0-9]+)?)s`)
 var benchmarkMemorySpeedRe = regexp.MustCompile(`\(([0-9]+(?:\.[0-9]+)?)\s+MiB/sec\)`)
@@ -547,7 +547,7 @@ func (v *BenchmarkView) runNodeCPUBenchmark(ctx context.Context, node corev1.Nod
 	script := fmt.Sprintf(`set -eu
 apk add --no-cache sysbench >/dev/null
 threads="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)"
-echo "seabird_threads=$threads"
+echo "orchestrator_threads=$threads"
 sysbench cpu --threads="$threads" --time=10 --cpu-max-prime=%d run
 `, result.CPUMaxPrime)
 	logs, wallTime, err := v.runNodeBenchmarkJob(ctx, node, "cpu", script)
@@ -567,7 +567,7 @@ func (v *BenchmarkView) runNodeMemoryBenchmark(ctx context.Context, node corev1.
 	script := `set -eu
 apk add --no-cache sysbench >/dev/null
 threads="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)"
-echo "seabird_threads=$threads"
+echo "orchestrator_threads=$threads"
 sysbench memory --threads="$threads" --time=10 --memory-block-size=1M --memory-total-size=100G run
 `
 	logs, wallTime, err := v.runNodeBenchmarkJob(ctx, node, "memory", script)
@@ -587,19 +587,19 @@ func (v *BenchmarkView) runNodeDiskBenchmark(ctx context.Context, node corev1.No
 	script := fmt.Sprintf(`set -eu
 apk add --no-cache fio >/dev/null
 cd /bench
-echo SEABIRD_FIO_SEQ_READ_BEGIN
-fio --name=seabird-seq-read --filename=seabird-fio-seq-read --size=%dM --rw=read --bs=1M --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
-echo SEABIRD_FIO_SEQ_READ_END
-echo SEABIRD_FIO_SEQ_WRITE_BEGIN
-fio --name=seabird-seq-write --filename=seabird-fio-seq-write --size=%dM --rw=write --bs=1M --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
-echo SEABIRD_FIO_SEQ_WRITE_END
-echo SEABIRD_FIO_READ_BEGIN
-fio --name=seabird-read --filename=seabird-fio-read --size=%dM --rw=randread --bs=4k --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
-echo SEABIRD_FIO_READ_END
-echo SEABIRD_FIO_WRITE_BEGIN
-fio --name=seabird-write --filename=seabird-fio-write --size=%dM --rw=randwrite --bs=4k --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
-echo SEABIRD_FIO_WRITE_END
-rm -f seabird-fio-*
+echo ORCHESTRATOR_FIO_SEQ_READ_BEGIN
+fio --name=orchestrator-seq-read --filename=orchestrator-fio-seq-read --size=%dM --rw=read --bs=1M --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
+echo ORCHESTRATOR_FIO_SEQ_READ_END
+echo ORCHESTRATOR_FIO_SEQ_WRITE_BEGIN
+fio --name=orchestrator-seq-write --filename=orchestrator-fio-seq-write --size=%dM --rw=write --bs=1M --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
+echo ORCHESTRATOR_FIO_SEQ_WRITE_END
+echo ORCHESTRATOR_FIO_READ_BEGIN
+fio --name=orchestrator-read --filename=orchestrator-fio-read --size=%dM --rw=randread --bs=4k --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
+echo ORCHESTRATOR_FIO_READ_END
+echo ORCHESTRATOR_FIO_WRITE_BEGIN
+fio --name=orchestrator-write --filename=orchestrator-fio-write --size=%dM --rw=randwrite --bs=4k --iodepth=16 --numjobs=1 --runtime=10 --time_based --direct=1 --group_reporting --output-format=json
+echo ORCHESTRATOR_FIO_WRITE_END
+rm -f orchestrator-fio-*
 `, result.SizeMiB, result.SizeMiB, result.SizeMiB, result.SizeMiB)
 	logs, wallTime, err := v.runNodeBenchmarkJob(ctx, node, "disk", script)
 	result.WallTimeSeconds = wallTime
@@ -821,7 +821,7 @@ func (v *BenchmarkView) waitBenchmarkPodReady(ctx context.Context, podName strin
 }
 
 func (v *BenchmarkView) benchmarkJobLogs(ctx context.Context, jobName string) (string, error) {
-	pods, err := v.Cluster.CoreV1().Pods(benchmarkNamespace).List(ctx, metav1.ListOptions{LabelSelector: "seabird.dev/benchmark=" + jobName})
+	pods, err := v.Cluster.CoreV1().Pods(benchmarkNamespace).List(ctx, metav1.ListOptions{LabelSelector: "orchestrator.dev/benchmark=" + jobName})
 	if err != nil {
 		return "", err
 	}
@@ -887,10 +887,10 @@ func (v *BenchmarkView) benchmarkCleanupContext() (context.Context, context.Canc
 
 func benchmarkLabels(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       "seabird",
+		"app.kubernetes.io/name":       "orchestrator",
 		"app.kubernetes.io/component":  "benchmark",
-		"app.kubernetes.io/managed-by": "seabird",
-		"seabird.dev/benchmark":        name,
+		"app.kubernetes.io/managed-by": "orchestrator",
+		"orchestrator.dev/benchmark":   name,
 	}
 }
 
@@ -979,7 +979,7 @@ func benchmarkHistoryDir(cluster string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "seabird", "benchmarks", benchmarkSafeName(cluster)), nil
+	return filepath.Join(configDir, "orchestrator", "benchmarks", benchmarkSafeName(cluster)), nil
 }
 
 func benchmarkSafeName(value string) string {
@@ -1035,24 +1035,24 @@ func parseMemoryBenchmarkLogs(result *benchmarkMemoryResult, logs string) {
 }
 
 func parseDiskBenchmarkLogs(result *benchmarkDiskResult, logs string) {
-	if readJSON := extractBetween(logs, "SEABIRD_FIO_SEQ_READ_BEGIN", "SEABIRD_FIO_SEQ_READ_END"); readJSON != "" {
+	if readJSON := extractBetween(logs, "ORCHESTRATOR_FIO_SEQ_READ_BEGIN", "ORCHESTRATOR_FIO_SEQ_READ_END"); readJSON != "" {
 		if direction, ok := parseFIODirection(readJSON, true); ok {
 			result.SequentialReadMiBPerSec = float64(direction.BWBytes) / 1024 / 1024
 		}
 	}
-	if writeJSON := extractBetween(logs, "SEABIRD_FIO_SEQ_WRITE_BEGIN", "SEABIRD_FIO_SEQ_WRITE_END"); writeJSON != "" {
+	if writeJSON := extractBetween(logs, "ORCHESTRATOR_FIO_SEQ_WRITE_BEGIN", "ORCHESTRATOR_FIO_SEQ_WRITE_END"); writeJSON != "" {
 		if direction, ok := parseFIODirection(writeJSON, false); ok {
 			result.SequentialWriteMiBPerSec = float64(direction.BWBytes) / 1024 / 1024
 		}
 	}
-	if readJSON := extractBetween(logs, "SEABIRD_FIO_READ_BEGIN", "SEABIRD_FIO_READ_END"); readJSON != "" {
+	if readJSON := extractBetween(logs, "ORCHESTRATOR_FIO_READ_BEGIN", "ORCHESTRATOR_FIO_READ_END"); readJSON != "" {
 		if direction, ok := parseFIODirection(readJSON, true); ok {
 			result.RandomReadMiBPerSec = float64(direction.BWBytes) / 1024 / 1024
 			result.RandomReadIOPS = direction.IOPS
 			result.RandomReadLatencyUS = direction.LatNS.Mean / 1000
 		}
 	}
-	if writeJSON := extractBetween(logs, "SEABIRD_FIO_WRITE_BEGIN", "SEABIRD_FIO_WRITE_END"); writeJSON != "" {
+	if writeJSON := extractBetween(logs, "ORCHESTRATOR_FIO_WRITE_BEGIN", "ORCHESTRATOR_FIO_WRITE_END"); writeJSON != "" {
 		if direction, ok := parseFIODirection(writeJSON, false); ok {
 			result.RandomWriteMiBPerSec = float64(direction.BWBytes) / 1024 / 1024
 			result.RandomWriteIOPS = direction.IOPS
@@ -1122,11 +1122,11 @@ func benchmarkJobName(kind, nodeName string) string {
 		base = "node"
 	}
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
-	maxBase := 63 - len("seabird---") - len(kind) - len(suffix)
+	maxBase := 63 - len("orchestrator---") - len(kind) - len(suffix)
 	if len(base) > maxBase {
 		base = strings.Trim(base[:maxBase], "-")
 	}
-	return fmt.Sprintf("seabird-%s-%s-%s", kind, base, suffix)
+	return fmt.Sprintf("orchestrator-%s-%s-%s", kind, base, suffix)
 }
 
 func (v *BenchmarkView) renderResult(result *benchmarkResult) {
@@ -1330,7 +1330,7 @@ func (v *BenchmarkView) save() {
 		return
 	}
 	chooser := gtk.NewFileChooserNative("Save benchmark results", ctxt.MustFrom[*gtk.Window](v.ctx), gtk.FileChooserActionSave, "Save", "Cancel")
-	chooser.SetCurrentName(fmt.Sprintf("seabird-benchmark-%s.json", time.Now().Format("20060102-150405")))
+	chooser.SetCurrentName(fmt.Sprintf("orchestrator-benchmark-%s.json", time.Now().Format("20060102-150405")))
 	chooser.ConnectResponse(func(responseID int) {
 		if responseID != int(gtk.ResponseAccept) || chooser.File() == nil {
 			return

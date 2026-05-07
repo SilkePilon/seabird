@@ -8,8 +8,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/pubsub"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/pubsub"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

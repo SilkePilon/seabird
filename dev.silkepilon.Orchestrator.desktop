@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
 
-Name=Seabird
+Name=Orchestrator
 Comment=Kubernetes desktop client
 Categories=Development;Network;
 Keywords=kubernetes;
 
-Icon=dev.skynomads.Seabird
-Exec=seabird
+Icon=dev.silkepilon.Orchestrator
+Exec=orchestrator
 Terminal=false

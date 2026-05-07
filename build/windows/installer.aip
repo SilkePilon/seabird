@@ -6,10 +6,10 @@
     <ROW Property="ALLUSERS" Value="1" MultiBuildValue="DefaultBuild:2"/>
     <ROW Property="ARPCOMMENTS" Value="This installer database contains the logic and data required to install [|ProductName]." ValueLocId="*"/>
     <ROW Property="ARPPRODUCTICON" Value="icon.exe" Type="8"/>
-    <ROW Property="Manufacturer" Value="Seabird Project"/>
+    <ROW Property="Manufacturer" Value="Orchestrator Project"/>
     <ROW Property="ProductCode" Value="1033:{D0F644BA-E39E-490C-8827-1791E42FB611} " Type="16"/>
     <ROW Property="ProductLanguage" Value="1033"/>
-    <ROW Property="ProductName" Value="Seabird"/>
+    <ROW Property="ProductName" Value="Orchestrator"/>
     <ROW Property="ProductVersion" Value="0.0.1" Options="8"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND"/>
     <ROW Property="UpgradeCode" Value="{80DE9871-7A36-468F-B9F3-DEE41FE1C8F3}"/>

@@ -1,4 +1,4 @@
-module github.com/getseabird/seabird
+module github.com/skynomads/orchestrator
 
 go 1.26.0
 

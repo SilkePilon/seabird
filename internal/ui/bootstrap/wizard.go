@@ -9,10 +9,10 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	core "github.com/getseabird/seabird/internal/bootstrap"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/internal/pubsub"
-	"github.com/getseabird/seabird/internal/ui/common"
+	core "github.com/skynomads/orchestrator/internal/bootstrap"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/ui/common"
 )
 
 // Wizard is the navigation root of the cluster-bootstrap experience.
@@ -55,7 +55,7 @@ func NewWizard(ctx context.Context, state *common.State, onFinish FinishHandler)
 		onFinish:                 onFinish,
 		requireKubeconfig:        true,
 		finishSuccessTitle:       "Cluster ready",
-		finishSuccessDescription: "Your new k3s cluster is up. Open it in Seabird or save the kubeconfig.",
+		finishSuccessDescription: "Your new k3s cluster is up. Open it in Orchestrator or save the kubeconfig.",
 	}
 
 	box := gtk.NewBox(gtk.OrientationVertical, 0)

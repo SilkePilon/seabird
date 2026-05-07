@@ -9,8 +9,8 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/widget"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 

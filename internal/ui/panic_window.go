@@ -16,7 +16,7 @@ type PanicWindow struct {
 func NewPanicWindow(err any) *PanicWindow {
 	w := gtk.NewWindow()
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
-	title := gtk.NewLabel("Seabird has crashed")
+	title := gtk.NewLabel("Orchestrator has crashed")
 	title.AddCSSClass("title-2")
 	box.Append(title)
 	w.SetChild(box)

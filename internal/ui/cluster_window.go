@@ -9,13 +9,13 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/getseabird/seabird/api"
-	"github.com/getseabird/seabird/internal/ctxt"
-	"github.com/getseabird/seabird/internal/ui/common"
-	"github.com/getseabird/seabird/internal/ui/editor"
-	"github.com/getseabird/seabird/internal/ui/list"
-	"github.com/getseabird/seabird/internal/ui/single"
-	"github.com/getseabird/seabird/widget"
+	"github.com/skynomads/orchestrator/api"
+	"github.com/skynomads/orchestrator/internal/ctxt"
+	"github.com/skynomads/orchestrator/internal/ui/common"
+	"github.com/skynomads/orchestrator/internal/ui/editor"
+	"github.com/skynomads/orchestrator/internal/ui/list"
+	"github.com/skynomads/orchestrator/internal/ui/single"
+	"github.com/skynomads/orchestrator/widget"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,7 +42,7 @@ func NewClusterWindow(ctx context.Context, app *gtk.Application, state *common.C
 		ApplicationWindow: window,
 		cancel:            cancel,
 	}
-	w.SetIconName("seabird")
+	w.SetIconName("orchestrator")
 	w.SetTitle(fmt.Sprintf("%s - %s", w.ClusterPreferences.Value().Name, ApplicationName))
 	w.SetDefaultSize(1000, 600)
 

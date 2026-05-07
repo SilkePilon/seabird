@@ -53,7 +53,7 @@ func BuildPlan(d *BootstrapDraft) (*Plan, error) {
 }
 
 // BuildUninstallPlan returns a destructive cleanup plan that removes k3s and
-// the files Seabird created while bootstrapping. Agents are cleaned before the
+// the files Orchestrator created while bootstrapping. Agents are cleaned before the
 // server so the control-plane node is available for as long as possible.
 func BuildUninstallPlan(d *BootstrapDraft) (*Plan, error) {
 	if d == nil {
@@ -173,7 +173,7 @@ func serverSteps(n Node, opts K3sOptions, p *NodeProbe) []Step {
 	s = append(s, Step{
 		ID:           uid("read-kubeconfig"),
 		Title:        "Read /etc/rancher/k3s/k3s.yaml",
-		Description:  "The kubeconfig is rewritten client-side to point at the public host and saved into Seabird's preferences.",
+		Description:  "The kubeconfig is rewritten client-side to point at the public host and saved into Orchestrator's preferences.",
 		Command:      "cat /etc/rancher/k3s/k3s.yaml",
 		RequiresRoot: true,
 		Effect:       EffectReadOnly,
@@ -299,7 +299,7 @@ func firewallSteps(p *NodeProbe, role NodeRole) []Step {
 			cmds = append(cmds, fmt.Sprintf("ufw allow %s/udp", port))
 		}
 	case "nftables":
-		// Best-effort: we add a permanent inet table named seabird-k3s.
+		// Best-effort: we add a permanent inet table named orchestrator-k3s.
 		var rules []string
 		for _, port := range tcp {
 			rules = append(rules, fmt.Sprintf("        tcp dport %s accept", port))
@@ -307,7 +307,7 @@ func firewallSteps(p *NodeProbe, role NodeRole) []Step {
 		for _, port := range udp {
 			rules = append(rules, fmt.Sprintf("        udp dport %s accept", port))
 		}
-		nft := "table inet seabird_k3s {\n  chain input {\n    type filter hook input priority 0;\n" +
+		nft := "table inet orchestrator_k3s {\n  chain input {\n    type filter hook input priority 0;\n" +
 			strings.Join(rules, "\n") + "\n  }\n}\n"
 		cmds = append(cmds, fmt.Sprintf("nft -f - <<'EOF'\n%sEOF", nft))
 	case "iptables":
@@ -349,7 +349,7 @@ func uninstallSteps(n Node) []Step {
 		{
 			ID:           uid("remove-k3s-files"),
 			Title:        "Remove k3s files and directories",
-			Description:  "Delete residual k3s, CNI, flannel, kubelet, and Seabird-created config paths.",
+			Description:  "Delete residual k3s, CNI, flannel, kubelet, and Orchestrator-created config paths.",
 			Command:      "rm -rf /etc/rancher/k3s /var/lib/rancher/k3s /var/lib/kubelet /var/lib/cni /etc/cni/net.d /opt/cni /run/k3s /run/flannel /var/run/flannel /etc/modules-load.d/k3s.conf /etc/sysctl.d/90-k3s.conf /usr/local/bin/k3s /usr/local/bin/k3s-*",
 			RequiresRoot: true,
 			Effect:       EffectSystem,
@@ -357,7 +357,7 @@ func uninstallSteps(n Node) []Step {
 		{
 			ID:           uid("restore-fstab"),
 			Title:        "Restore fstab backup if present",
-			Description:  "Restore /etc/fstab from /etc/fstab.bak when Seabird previously disabled swap.",
+			Description:  "Restore /etc/fstab from /etc/fstab.bak when Orchestrator previously disabled swap.",
 			Command:      "if [ -f /etc/fstab.bak ]; then cp /etc/fstab.bak /etc/fstab && rm -f /etc/fstab.bak; else echo 'no /etc/fstab.bak found'; fi",
 			RequiresRoot: true,
 			Effect:       EffectFile,
@@ -365,7 +365,7 @@ func uninstallSteps(n Node) []Step {
 		{
 			ID:           uid("remove-firewall-rules"),
 			Title:        "Remove k3s firewall rules",
-			Description:  "Best-effort removal of firewall ports and nftables table Seabird may have added.",
+			Description:  "Best-effort removal of firewall ports and nftables table Orchestrator may have added.",
 			Command:      uninstallFirewallCommand(),
 			RequiresRoot: true,
 			Effect:       EffectFirewall,
@@ -381,7 +381,7 @@ func uninstallFirewallCommand() string {
 	}
 	cmds = append(cmds,
 		"if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --reload || true; fi",
-		"if command -v nft >/dev/null 2>&1; then nft delete table inet seabird_k3s || true; fi",
+		"if command -v nft >/dev/null 2>&1; then nft delete table inet orchestrator_k3s || true; fi",
 		"if command -v iptables >/dev/null 2>&1; then iptables -D INPUT -p tcp --dport 6443 -j ACCEPT || true; iptables -D INPUT -p tcp --dport 10250 -j ACCEPT || true; iptables -D INPUT -p udp --dport 8472 -j ACCEPT || true; fi",
 	)
 	return strings.Join(cmds, "\n")
@@ -496,7 +496,7 @@ func heredocWrite(path, content string) string {
 	// Use a unique marker so embedded EOFs in the content don't break
 	// the heredoc. The literal content is not expanded by the shell
 	// because we quote the marker.
-	marker := "EOF_SEABIRD"
+	marker := "EOF_ORCHESTRATOR"
 	return fmt.Sprintf("cat > %s <<'%s'\n%s%s\n", path, marker, content, marker)
 }
 

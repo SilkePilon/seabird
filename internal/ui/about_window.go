@@ -13,12 +13,12 @@ type AboutWindow struct {
 
 func NewAboutWindow() *AboutWindow {
 	w := AboutWindow{adw.NewAboutDialog()}
-	w.SetApplicationIcon("seabird")
+	w.SetApplicationIcon("orchestrator")
 	w.SetApplicationName(ApplicationName)
 	w.SetVersion(Version)
-	w.SetWebsite("https://github.com/getseabird/seabird")
-	w.SetIssueURL("https://github.com/getseabird/seabird/issues")
-	w.SetSupportURL("https://github.com/getseabird/seabird/discussions")
+	w.SetWebsite("https://github.com/skynomads/orchestrator")
+	w.SetIssueURL("https://github.com/skynomads/orchestrator/issues")
+	w.SetSupportURL("https://github.com/skynomads/orchestrator/discussions")
 	w.SetLicenseType(gtk.LicenseMPL20)
 	return &w
 }

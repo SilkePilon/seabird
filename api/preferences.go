@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/getseabird/seabird/internal/pubsub"
+	"github.com/skynomads/orchestrator/internal/pubsub"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -41,7 +41,7 @@ func prefsPath() string {
 	if err != nil {
 		panic(err)
 	}
-	return path.Join(cd, "seabird", "prefs.json")
+	return path.Join(cd, "orchestrator", "prefs.json")
 }
 
 type ClusterPreferences struct {
@@ -58,12 +58,12 @@ type ClusterPreferences struct {
 		Pins       []corev1.ObjectReference
 	}
 	// Bootstrap, when non-nil, indicates this cluster was created by the
-	// Seabird k3s bootstrap wizard. It is purely informational; the
+	// Orchestrator k3s bootstrap wizard. It is purely informational; the
 	// connection details live in Host/TLS/BearerToken.
 	Bootstrap *BootstrapRecord `json:",omitempty"`
 }
 
-// BootstrapRecord is metadata about a cluster Seabird bootstrapped itself.
+// BootstrapRecord is metadata about a cluster Orchestrator bootstrapped itself.
 // It is rendered on the cluster card so the user can see at a glance how
 // the cluster was created and which nodes it spans.
 type BootstrapRecord struct {
@@ -76,7 +76,7 @@ type BootstrapRecord struct {
 	CreatedAt    time.Time
 }
 
-// BootstrapNodeRecord stores non-secret SSH metadata for nodes Seabird
+// BootstrapNodeRecord stores non-secret SSH metadata for nodes Orchestrator
 // bootstrapped. Secrets such as SSH passwords, sudo passwords, private-key
 // contents, and tokens are intentionally not persisted.
 type BootstrapNodeRecord struct {
