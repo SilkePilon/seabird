@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/tools/reference"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"k8s.io/utils/ptr"
@@ -35,14 +34,14 @@ func init() {
 func NewCore(_ context.Context, cluster *api.Cluster) (Extension, error) {
 	return &Core{
 		Cluster:     cluster,
-		portforward: PortForwarder{cluster, map[types.NamespacedName]*portforward.PortForwarder{}},
+		portforward: NewPortForwarder(cluster),
 	}, nil
 }
 
 type Core struct {
 	Noop
 	*api.Cluster
-	portforward PortForwarder
+	portforward *PortForwarder
 }
 
 func (e *Core) CreateColumns(ctx context.Context, res *metav1.APIResource, columns []api.Column) []api.Column {

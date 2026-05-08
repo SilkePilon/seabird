@@ -5,10 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/gio/v2"
-	"github.com/diamondburned/gotk4/pkg/glib/v2"
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/SilkePilon/Orchestrator/api"
 	"github.com/SilkePilon/Orchestrator/internal/ctxt"
 	"github.com/SilkePilon/Orchestrator/internal/ui/common"
@@ -16,6 +12,10 @@ import (
 	"github.com/SilkePilon/Orchestrator/internal/ui/list"
 	"github.com/SilkePilon/Orchestrator/internal/ui/single"
 	"github.com/SilkePilon/Orchestrator/widget"
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -123,6 +123,7 @@ func NewClusterWindow(ctx context.Context, app *gtk.Application, state *common.C
 	viewStack.AddChild(NewRBACViewer(ctx, w.ClusterState)).SetName("rbac")
 	viewStack.AddChild(NewCostWasteView(ctx, w.ClusterState)).SetName("cost")
 	viewStack.AddChild(NewSecurityScanView(ctx, w.ClusterState)).SetName("security")
+	viewStack.AddChild(NewAppsView(ctx, w.ClusterState)).SetName("apps")
 	viewStack.SetVisibleChild(w.listView)
 	paned.SetEndChild(viewStack)
 

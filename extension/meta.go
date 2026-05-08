@@ -9,8 +9,13 @@ import (
 
 	"github.com/SilkePilon/Orchestrator/api"
 	"github.com/SilkePilon/Orchestrator/internal/util"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -32,7 +37,35 @@ func (e *Meta) CreateColumns(ctx context.Context, resource *metav1.APIResource, 
 		Name:     "Name",
 		Priority: 100,
 		Bind: func(cell api.Cell, object client.Object) {
-			cell.SetLabel(object.GetName())
+			label := gtk.NewLabel(object.GetName())
+			label.SetHAlign(gtk.AlignStart)
+			label.SetEllipsize(pango.EllipsizeEnd)
+
+			port, ok := lookupForwardedPort(e.Cluster, object)
+			if !ok {
+				cell.SetChild(label)
+				return
+			}
+
+			box := gtk.NewBox(gtk.OrientationHorizontal, 4)
+			box.SetHAlign(gtk.AlignStart)
+			label.SetHAlign(gtk.AlignStart)
+			box.Append(label)
+
+			url := fmt.Sprintf("http://localhost:%d", port)
+			icon := gtk.NewImageFromIconName("external-link-symbolic")
+			icon.SetPixelSize(12)
+			icon.AddCSSClass("dim-label")
+			icon.SetVAlign(gtk.AlignCenter)
+			icon.SetTooltipText("Open " + url)
+			icon.SetCursorFromName("pointer")
+			click := gtk.NewGestureClick()
+			click.ConnectReleased(func(_ int, _, _ float64) {
+				gtk.ShowURI(nil, url, gdk.CURRENT_TIME)
+			})
+			icon.AddController(click)
+			box.Append(icon)
+			cell.SetChild(box)
 		},
 		Compare: func(a, b client.Object) int {
 			return strings.Compare(a.GetName(), b.GetName())
@@ -155,4 +188,22 @@ func (e *Meta) CreateObjectProperties(ctx context.Context, resource *metav1.APIR
 	}
 
 	return props
+}
+
+// lookupForwardedPort returns a local port to open in the browser when an
+// active port-forward exists for the given object. Pods match directly;
+// Deployments resolve to any backing pod with an active forward.
+func lookupForwardedPort(cluster *api.Cluster, object client.Object) (uint16, bool) {
+	pf := PortForwarderFor(cluster)
+	if pf == nil {
+		return 0, false
+	}
+	nn := types.NamespacedName{Name: object.GetName(), Namespace: object.GetNamespace()}
+	switch object.(type) {
+	case *corev1.Pod:
+		return pf.LocalPortForPod(nn)
+	case *appsv1.Deployment:
+		return pf.LocalPortForDeployment(nn)
+	}
+	return 0, false
 }

@@ -42,7 +42,7 @@ type securityFinding struct {
 }
 
 func NewSecurityScanView(ctx context.Context, state *common.ClusterState) *SecurityScanView {
-	tv, page, refresh, status := toolPage(state, "Security Scan", "Refresh security scan")
+	tv, page, refresh, status, _ := toolPage(state, "Security Scan", "Refresh security scan")
 	view := &SecurityScanView{
 		ToolbarView:  tv,
 		ClusterState: state,

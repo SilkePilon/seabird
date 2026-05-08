@@ -16,7 +16,7 @@ import (
 // refresh button on the right, plus a scrolled AdwPreferencesPage as the
 // content). Returns the toolbar view, the inner preferences page, the refresh
 // button (which the caller must wire up) and the header status label.
-func toolPage(state *common.ClusterState, title, refreshTooltip string) (*adw.ToolbarView, *adw.PreferencesPage, *gtk.Button, *gtk.Label) {
+func toolPage(state *common.ClusterState, title, refreshTooltip string) (*adw.ToolbarView, *adw.PreferencesPage, *gtk.Button, *gtk.Label, *adw.HeaderBar) {
 	tv := adw.NewToolbarView()
 	tv.AddCSSClass("view")
 	tv.SetTopBarStyle(adw.ToolbarRaised)
@@ -45,7 +45,7 @@ func toolPage(state *common.ClusterState, title, refreshTooltip string) (*adw.To
 	scroll.SetChild(page)
 	tv.SetContent(scroll)
 
-	return tv, page, refresh, status
+	return tv, page, refresh, status, header
 }
 
 // toolGroup creates an AdwPreferencesGroup with a title and optional description.

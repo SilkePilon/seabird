@@ -44,7 +44,7 @@ type costWasteFinding struct {
 }
 
 func NewCostWasteView(ctx context.Context, state *common.ClusterState) *CostWasteView {
-	tv, page, refresh, status := toolPage(state, "Cost & Waste", "Refresh cost and waste recommendations")
+	tv, page, refresh, status, _ := toolPage(state, "Cost & Waste", "Refresh cost and waste recommendations")
 	view := &CostWasteView{
 		ToolbarView:  tv,
 		ClusterState: state,

@@ -33,7 +33,7 @@ type timelineEntry struct {
 }
 
 func NewProblemTimelineView(ctx context.Context, state *common.ClusterState) *ProblemTimelineView {
-	tv, page, refresh, status := toolPage(state, "Problem Timeline", "Refresh problem timeline")
+	tv, page, refresh, status, _ := toolPage(state, "Problem Timeline", "Refresh problem timeline")
 	view := &ProblemTimelineView{
 		ToolbarView:  tv,
 		ClusterState: state,

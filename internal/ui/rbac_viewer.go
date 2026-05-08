@@ -33,7 +33,7 @@ type rbacOverview struct {
 }
 
 func NewRBACViewer(ctx context.Context, state *common.ClusterState) *RBACViewer {
-	tv, page, refresh, status := toolPage(state, "RBAC", "Refresh RBAC overview")
+	tv, page, refresh, status, _ := toolPage(state, "RBAC", "Refresh RBAC overview")
 	view := &RBACViewer{
 		ToolbarView:  tv,
 		ClusterState: state,

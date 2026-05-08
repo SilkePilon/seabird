@@ -53,7 +53,7 @@ type healthFinding struct {
 }
 
 func NewHealthOverviewView(ctx context.Context, state *common.ClusterState) *HealthOverviewView {
-	tv, page, refresh, status := toolPage(state, "Cluster Health", "Refresh cluster health")
+	tv, page, refresh, status, _ := toolPage(state, "Cluster Health", "Refresh cluster health")
 	view := &HealthOverviewView{
 		ToolbarView:  tv,
 		ClusterState: state,

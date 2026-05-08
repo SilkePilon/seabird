@@ -4,5 +4,34 @@
   },
   "terminal.integrated.env.linux": {
     "PATH": "/home/silke/sdk/go1.26.3/bin:${env:PATH}"
-  }
+  },
+  "files.watcherExclude": {
+    "**/internal/icon/icon-development-kit/**": true,
+    "**/internal/icon/icon.gresource": true,
+    "**/build/**": true,
+    "**/.cache/**": true
+  },
+  "files.exclude": {
+    "**/internal/icon/icon-development-kit": true
+  },
+  "search.exclude": {
+    "**/internal/icon/icon-development-kit/**": true,
+    "**/internal/icon/icon.gresource": true,
+    "**/build/**": true
+  },
+  "gopls": {
+    "build.directoryFilters": [
+      "-internal/icon/icon-development-kit",
+      "-build"
+    ],
+    "ui.diagnostic.staticcheck": false,
+    "ui.completion.usePlaceholders": false,
+    "ui.semanticTokens": false
+  },
+  "go.useLanguageServer": true,
+  "go.toolsManagement.autoUpdate": false,
+  "go.lintOnSave": "off",
+  "go.vetOnSave": "off",
+  "go.buildOnSave": "off",
+  "go.coverOnSave": false
 }

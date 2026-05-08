@@ -18,19 +18,23 @@
   <screenshots>
     <screenshot type="default">
       <caption>Orchestrator main application window</caption>
-      <image type="source">https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/main.png</image>
+      <image type="source">
+        https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/main.png</image>
     </screenshot>
     <screenshot>
       <caption>Welcome screen for connecting or creating clusters</caption>
-      <image type="source">https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/welcome.png</image>
+      <image type="source">
+        https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/welcome.png</image>
     </screenshot>
     <screenshot>
       <caption>Cluster probe results before installation</caption>
-      <image type="source">https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/probe.png</image>
+      <image type="source">
+        https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/probe.png</image>
     </screenshot>
     <screenshot>
       <caption>Cluster bootstrap progress with live logs</caption>
-      <image type="source">https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/apply.png</image>
+      <image type="source">
+        https://raw.githubusercontent.com/SilkePilon/Orchestrator/main/data/screenshots/apply.png</image>
     </screenshot>
   </screenshots>
   <url type="homepage">https://github.com/SilkePilon/Orchestrator</url>
