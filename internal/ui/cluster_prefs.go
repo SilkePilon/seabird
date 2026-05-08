@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/glib/v2"
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/SilkePilon/Orchestrator/api"
 	"github.com/SilkePilon/Orchestrator/internal/ctxt"
 	"github.com/SilkePilon/Orchestrator/internal/pubsub"
@@ -15,6 +13,9 @@ import (
 	"github.com/SilkePilon/Orchestrator/internal/ui/common"
 	"github.com/SilkePilon/Orchestrator/internal/util"
 	"github.com/SilkePilon/Orchestrator/widget"
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"golang.org/x/exp/maps"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -136,9 +137,9 @@ func (p *ClusterPrefPage) createSaveButton() *gtk.Button {
 		cluster.ReadOnly = p.readonly.Active()
 		cluster.SkipTlsVerification = p.insecure.Active()
 		cluster.TLS.Insecure = p.insecure.Active()
-		cluster.TLS.CertData = []byte(p.cert.Text())
-		cluster.TLS.KeyData = []byte(p.key.Text())
-		cluster.TLS.CAData = []byte(p.ca.Text())
+		cluster.TLS.CertData = normalizePEM(p.cert.Text())
+		cluster.TLS.KeyData = normalizePEM(p.key.Text())
+		cluster.TLS.CAData = normalizePEM(p.ca.Text())
 		cluster.BearerToken = p.bearer.Text()
 		if p.exec.Subtitle() == "" {
 			cluster.Exec = nil
@@ -332,4 +333,20 @@ func (p *ClusterPrefPage) updateValues(prefs api.ClusterPreferences) {
 		p.bearer.SetSensitive(false)
 		p.execDelete.SetSensitive(false)
 	}
+}
+
+// normalizePEM re-inserts newlines around PEM header/footer markers that GTK's
+// single-line EntryRow strips when displaying multi-line certificate data.
+// The Go PEM decoder ignores spaces in the base64 body, so only the markers
+// need to be on their own lines.
+func normalizePEM(s string) []byte {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	if !strings.Contains(s, "\n") {
+		s = strings.ReplaceAll(s, "----- ", "-----\n")
+		s = strings.ReplaceAll(s, " -----", "\n-----")
+	}
+	return []byte(s)
 }

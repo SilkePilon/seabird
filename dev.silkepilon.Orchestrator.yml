@@ -84,6 +84,7 @@ modules:
       - install -Dm644 dev.silkepilon.Orchestrator.desktop /app/share/applications/dev.silkepilon.Orchestrator.desktop
       - install -Dm644 dev.silkepilon.Orchestrator.metainfo.xml /app/share/metainfo/dev.silkepilon.Orchestrator.metainfo.xml
       - install -Dm644 internal/icon/orchestrator.svg /app/share/icons/hicolor/scalable/apps/dev.silkepilon.Orchestrator.svg
+      - install -Dm644 LICENSE /app/share/licenses/dev.silkepilon.Orchestrator/LICENSE
     sources:
       - type: git
         url: https://github.com/SilkePilon/Orchestrator.git

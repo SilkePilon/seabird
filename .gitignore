@@ -1,4 +1,6 @@
 .flatpak-builder
+repo/
+build-dir/
 dist/
 *.gresource
 *.syso
