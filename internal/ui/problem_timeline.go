@@ -6,11 +6,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/SilkePilon/Orchestrator/internal/ui/common"
+	"github.com/SilkePilon/Orchestrator/widget"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/SilkePilon/Orchestrator/internal/ui/common"
-	"github.com/SilkePilon/Orchestrator/widget"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -19,9 +19,10 @@ type ProblemTimelineView struct {
 	*adw.ToolbarView
 	*common.ClusterState
 	ctx     context.Context
+	page    *adw.PreferencesPage
 	refresh *gtk.Button
 	status  *gtk.Label
-	results *gtk.Box
+	groups  []*adw.PreferencesGroup
 }
 
 type timelineEntry struct {
@@ -32,57 +33,44 @@ type timelineEntry struct {
 }
 
 func NewProblemTimelineView(ctx context.Context, state *common.ClusterState) *ProblemTimelineView {
+	tv, page, refresh, status := toolPage(state, "Problem Timeline", "Refresh problem timeline")
 	view := &ProblemTimelineView{
-		ToolbarView:  adw.NewToolbarView(),
+		ToolbarView:  tv,
 		ClusterState: state,
 		ctx:          ctx,
+		page:         page,
+		refresh:      refresh,
+		status:       status,
 	}
-	view.AddCSSClass("view")
-	view.SetTopBarStyle(adw.ToolbarRaised)
-
-	header := adw.NewHeaderBar()
-	header.SetTitleWidget(adw.NewWindowTitle("Timeline", state.ClusterPreferences.Value().Name))
-	view.refresh = gtk.NewButtonFromIconName("view-refresh-symbolic")
-	view.refresh.AddCSSClass("flat")
-	view.refresh.SetTooltipText("Refresh problem timeline")
+	view.status.SetText("Loading…")
 	view.refresh.ConnectClicked(view.refreshTimeline)
-	header.PackEnd(view.refresh)
-	view.AddTopBar(header)
-
-	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	page := adw.NewPreferencesPage()
-	scroll.SetChild(page)
-	view.SetContent(scroll)
-
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("Problem Timeline")
-	group.SetDescription("Recent Kubernetes events, pod restarts, waiting containers, and rollout health changes in one chronological view.")
-	page.Add(group)
-
-	view.status = gtk.NewLabel("Loading problem timeline...")
-	view.status.SetHAlign(gtk.AlignStart)
-	view.status.AddCSSClass("dim-label")
-	group.Add(view.status)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	group.Add(view.results)
-
 	view.refreshTimeline()
 	return view
 }
 
+func (v *ProblemTimelineView) clearGroups() {
+	for _, g := range v.groups {
+		v.page.Remove(g)
+	}
+	v.groups = nil
+}
+
+func (v *ProblemTimelineView) addGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.groups = append(v.groups, g)
+}
+
 func (v *ProblemTimelineView) refreshTimeline() {
 	v.refresh.SetSensitive(false)
-	v.status.SetText("Refreshing problem timeline...")
-	clearBox(v.results)
+	v.status.SetText("Refreshing…")
+	v.clearGroups()
 
 	go func() {
 		entries, err := v.collectProblemTimeline()
 		glib.IdleAdd(func() {
 			v.refresh.SetSensitive(true)
 			if err != nil {
-				v.status.SetText("Could not refresh problem timeline.")
+				v.status.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Problem timeline failed", err)
 				return
 			}
@@ -207,17 +195,99 @@ func (v *ProblemTimelineView) appendRolloutTimeline(ctx context.Context, entries
 }
 
 func (v *ProblemTimelineView) renderTimeline(entries []timelineEntry) {
-	clearBox(v.results)
-	card := benchmarkCard()
-	card.Append(sectionLabel("Latest Signals"))
+	v.clearGroups()
+
+	warnings := 0
+	for _, e := range entries {
+		if e.Severity == "Warning" {
+			warnings++
+		}
+	}
+	infos := len(entries) - warnings
+
+	overview := toolGroup("Overview", "Recent Kubernetes events, pod restarts, and rollout health changes.")
+	statTilesGroup(overview, []statTile{
+		{Value: fmt.Sprintf("%d", len(entries)), Caption: "Signals", Style: "accent"},
+		{Value: fmt.Sprintf("%d", warnings), Caption: "Warnings", Style: tileStyleForCount(warnings, true)},
+		{Value: fmt.Sprintf("%d", infos), Caption: "Informational", Style: "accent"},
+	})
+	v.addGroup(overview)
+
 	if len(entries) == 0 {
-		card.Append(textRow("Status", "No recent problems found."))
-		v.results.Append(card)
+		empty := toolGroup("Latest Signals", "")
+		emptyStatusGroup(empty, "All clear",
+			"There are no recent problems, restarts, or warning events.",
+			"emblem-default-symbolic")
+		v.addGroup(empty)
 		return
 	}
+
+	signals := toolGroup("Latest Signals",
+		fmt.Sprintf("Showing %d most recent items, newest first.", len(entries)))
 	for _, entry := range entries {
-		title := fmt.Sprintf("%s · %s · %s", entry.When.Format("Jan 2 15:04"), entry.Severity, entry.Title)
-		card.Append(textRow(title, entry.Text))
+		style := "warning"
+		icon := "dialog-warning-symbolic"
+		if entry.Severity != "Warning" {
+			style = "accent"
+			icon = "dialog-information-symbolic"
+		}
+		title := fmt.Sprintf("%s — %s", entry.When.Format("Jan 2 15:04"), entry.Title)
+		e := entry
+		signals.Add(clickableFindingRow(title, entry.Text, icon, entry.Severity, style, func() {
+			v.showSignalDetails(e)
+		}))
 	}
-	v.results.Append(card)
+	v.addGroup(signals)
+}
+
+func (v *ProblemTimelineView) showSignalDetails(e timelineEntry) {
+	age := "unknown"
+	if !e.When.IsZero() {
+		age = humanDuration(time.Since(e.When)) + " ago"
+	}
+	sections := []detailSection{
+		{
+			Title: "Signal",
+			Fields: []detailField{
+				{Label: "Source", Value: e.Title},
+				{Label: "Severity", Value: e.Severity},
+				{Label: "When", Value: e.When.Format("2006-01-02 15:04:05")},
+				{Label: "Age", Value: age},
+			},
+		},
+		{
+			Title: "Details",
+			Fields: []detailField{
+				{Label: "Message", Value: e.Text},
+			},
+		},
+	}
+	severity := 30
+	if e.Severity == "Warning" {
+		severity = 70
+	}
+	showDetailsDialog(v.ctx, e.Title, severity, sections)
+}
+
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+func tileStyleForCount(n int, badIfPositive bool) string {
+	if n == 0 {
+		return "success"
+	}
+	if badIfPositive {
+		return "warning"
+	}
+	return "accent"
 }

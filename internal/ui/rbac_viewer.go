@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/SilkePilon/Orchestrator/internal/ui/common"
+	"github.com/SilkePilon/Orchestrator/widget"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/SilkePilon/Orchestrator/internal/ui/common"
-	"github.com/SilkePilon/Orchestrator/widget"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
@@ -18,9 +19,10 @@ type RBACViewer struct {
 	*adw.ToolbarView
 	*common.ClusterState
 	ctx     context.Context
+	page    *adw.PreferencesPage
 	refresh *gtk.Button
 	status  *gtk.Label
-	results *gtk.Box
+	groups  []*adw.PreferencesGroup
 }
 
 type rbacOverview struct {
@@ -31,62 +33,48 @@ type rbacOverview struct {
 }
 
 func NewRBACViewer(ctx context.Context, state *common.ClusterState) *RBACViewer {
+	tv, page, refresh, status := toolPage(state, "RBAC", "Refresh RBAC overview")
 	view := &RBACViewer{
-		ToolbarView:  adw.NewToolbarView(),
+		ToolbarView:  tv,
 		ClusterState: state,
 		ctx:          ctx,
+		page:         page,
+		refresh:      refresh,
+		status:       status,
 	}
-	view.AddCSSClass("view")
-	view.SetTopBarStyle(adw.ToolbarRaised)
-
-	header := adw.NewHeaderBar()
-	header.SetTitleWidget(adw.NewWindowTitle("RBAC", state.ClusterPreferences.Value().Name))
-
-	view.refresh = gtk.NewButtonFromIconName("view-refresh-symbolic")
-	view.refresh.AddCSSClass("flat")
-	view.refresh.SetTooltipText("Refresh RBAC overview")
+	view.status.SetText("Loading…")
 	view.refresh.ConnectClicked(view.refreshRBAC)
-	header.PackEnd(view.refresh)
-	view.AddTopBar(header)
-
-	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	page := adw.NewPreferencesPage()
-	scroll.SetChild(page)
-	view.SetContent(scroll)
-
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("RBAC Viewer")
-	group.SetDescription("Roles, ClusterRoles, and their bindings across the cluster.")
-	page.Add(group)
-
-	view.status = gtk.NewLabel("Loading RBAC...")
-	view.status.SetHAlign(gtk.AlignStart)
-	view.status.AddCSSClass("dim-label")
-	group.Add(view.status)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	group.Add(view.results)
-
 	view.refreshRBAC()
 	return view
 }
 
+func (v *RBACViewer) clearGroups() {
+	for _, g := range v.groups {
+		v.page.Remove(g)
+	}
+	v.groups = nil
+}
+
+func (v *RBACViewer) addGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.groups = append(v.groups, g)
+}
+
 func (v *RBACViewer) refreshRBAC() {
 	v.refresh.SetSensitive(false)
-	v.status.SetText("Refreshing RBAC...")
-	clearBox(v.results)
+	v.status.SetText("Refreshing…")
+	v.clearGroups()
 
 	go func() {
 		overview, err := v.collectRBAC()
 		glib.IdleAdd(func() {
 			v.refresh.SetSensitive(true)
 			if err != nil {
-				v.status.SetText("Could not load RBAC")
+				v.status.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Could not load RBAC", err)
 				return
 			}
-			v.status.SetText("RBAC loaded")
+			v.status.SetText(fmt.Sprintf("Updated %s", time.Now().Format("15:04:05")))
 			v.renderRBAC(overview)
 		})
 	}()
@@ -120,88 +108,222 @@ func (v *RBACViewer) collectRBAC() (*rbacOverview, error) {
 	return overview, nil
 }
 
-func (v *RBACViewer) renderRBAC(overview *rbacOverview) {
-	clearBox(v.results)
-
-	summary := benchmarkCard()
-	summary.Append(sectionLabel("Summary"))
-	summary.Append(textRow("Roles", fmt.Sprintf("%d", len(overview.Roles))))
-	summary.Append(textRow("ClusterRoles", fmt.Sprintf("%d", len(overview.ClusterRoles))))
-	summary.Append(textRow("RoleBindings", fmt.Sprintf("%d", len(overview.RoleBindings))))
-	summary.Append(textRow("ClusterRoleBindings", fmt.Sprintf("%d", len(overview.ClusterRoleBindings))))
-	v.results.Append(summary)
-
-	roleCard := benchmarkCard()
-	roleCard.Append(sectionLabel("Roles With Broad Access"))
-	appendBroadRoleRows(roleCard, overview)
-	v.results.Append(roleCard)
-
-	bindingCard := benchmarkCard()
-	bindingCard.Append(sectionLabel("Bindings"))
-	appendBindingRows(bindingCard, overview)
-	v.results.Append(bindingCard)
+type roleFinding struct {
+	Name        string
+	Text        string
+	Kind        string
+	Namespace   string
+	Rules       []rbacv1.PolicyRule
+	Annotations map[string]string
+	Labels      map[string]string
 }
 
-func appendBroadRoleRows(card *gtk.Box, overview *rbacOverview) {
-	type roleFinding struct {
-		Name string
-		Text string
-	}
-	var findings []roleFinding
+type bindingRowData struct {
+	Name      string
+	Namespace string
+	Kind      string
+	Subjects  []rbacv1.Subject
+	RoleRef   rbacv1.RoleRef
+}
+
+func (v *RBACViewer) renderRBAC(overview *rbacOverview) {
+	v.clearGroups()
+
+	// Overview tiles
+	overviewGroup := toolGroup("Overview", "Roles, ClusterRoles, and bindings discovered in the cluster.")
+	statTilesGroup(overviewGroup, []statTile{
+		{Value: fmt.Sprintf("%d", len(overview.Roles)), Caption: "Roles", Style: "accent"},
+		{Value: fmt.Sprintf("%d", len(overview.ClusterRoles)), Caption: "ClusterRoles", Style: "accent"},
+		{Value: fmt.Sprintf("%d", len(overview.RoleBindings)), Caption: "RoleBindings", Style: "accent"},
+		{Value: fmt.Sprintf("%d", len(overview.ClusterRoleBindings)), Caption: "ClusterRoleBindings", Style: "accent"},
+	})
+	v.addGroup(overviewGroup)
+
+	// Broad-access roles
+	var broad []roleFinding
 	for _, role := range overview.Roles {
 		if text := broadRuleSummary(role.Rules); text != "" {
-			findings = append(findings, roleFinding{Name: role.Namespace + "/" + role.Name, Text: text})
+			broad = append(broad, roleFinding{
+				Name: role.Namespace + "/" + role.Name, Text: text,
+				Kind: "Role", Namespace: role.Namespace, Rules: role.Rules,
+				Annotations: role.Annotations, Labels: role.Labels,
+			})
 		}
 	}
 	for _, role := range overview.ClusterRoles {
 		if text := broadRuleSummary(role.Rules); text != "" {
-			findings = append(findings, roleFinding{Name: role.Name, Text: text})
+			broad = append(broad, roleFinding{
+				Name: role.Name, Text: text,
+				Kind: "ClusterRole", Rules: role.Rules,
+				Annotations: role.Annotations, Labels: role.Labels,
+			})
 		}
 	}
-	sort.Slice(findings, func(i, j int) bool { return findings[i].Name < findings[j].Name })
-	if len(findings) == 0 {
-		card.Append(textRow("Broad roles", "No wildcard admin-style rules found."))
-		return
-	}
-	for i, finding := range findings {
-		if i >= 40 {
-			card.Append(textRow("More", fmt.Sprintf("%d additional broad roles", len(findings)-i)))
-			return
+	sort.Slice(broad, func(i, j int) bool { return broad[i].Name < broad[j].Name })
+
+	broadGroup := toolGroup("Roles With Broad Access",
+		"Roles and ClusterRoles that allow wildcard verbs or resources.")
+	if len(broad) == 0 {
+		emptyStatusGroup(broadGroup, "No broad roles",
+			"No wildcard admin-style rules were found.",
+			"emblem-default-symbolic")
+	} else {
+		const limit = 40
+		for i, f := range broad {
+			if i >= limit {
+				broadGroup.Add(metricRow("More",
+					fmt.Sprintf("%d additional broad roles", len(broad)-i), ""))
+				break
+			}
+			finding := f
+			broadGroup.Add(clickableFindingRow(f.Name, f.Text, "dialog-warning-symbolic", "Broad", "warning", func() {
+				v.showRoleDetails(finding)
+			}))
 		}
-		card.Append(textRow(finding.Name, finding.Text))
 	}
+	v.addGroup(broadGroup)
+
+	// Bindings
+	var bindings []bindingRowData
+	for _, b := range overview.RoleBindings {
+		bindings = append(bindings, bindingRowData{
+			Name:      b.Namespace + "/" + b.Name,
+			Namespace: b.Namespace,
+			Kind:      "RoleBinding",
+			Subjects:  b.Subjects,
+			RoleRef:   b.RoleRef,
+		})
+	}
+	for _, b := range overview.ClusterRoleBindings {
+		bindings = append(bindings, bindingRowData{
+			Name:     b.Name,
+			Kind:     "ClusterRoleBinding",
+			Subjects: b.Subjects,
+			RoleRef:  b.RoleRef,
+		})
+	}
+	sort.Slice(bindings, func(i, j int) bool { return bindings[i].Name < bindings[j].Name })
+
+	bindingGroup := toolGroup("Bindings",
+		"Each binding shows its subjects and the role it grants. Click for full details.")
+	if len(bindings) == 0 {
+		emptyStatusGroup(bindingGroup, "No bindings",
+			"No RBAC bindings were found in the cluster.",
+			"emblem-default-symbolic")
+	} else {
+		const limit = 80
+		for i, b := range bindings {
+			if i >= limit {
+				bindingGroup.Add(metricRow("More",
+					fmt.Sprintf("%d additional bindings", len(bindings)-i), ""))
+				break
+			}
+			binding := b
+			subtitle := fmt.Sprintf("%s → %s · %s", b.Kind, b.RoleRef.Kind, b.RoleRef.Name)
+			detail := subjectSummary(b.Subjects)
+			bindingGroup.Add(clickableFindingRow(b.Name, subtitle+"\n"+detail, "dialog-password-symbolic", b.Kind, "accent", func() {
+				v.showBindingDetails(binding)
+			}))
+		}
+	}
+	v.addGroup(bindingGroup)
 }
 
-func appendBindingRows(card *gtk.Box, overview *rbacOverview) {
-	type bindingRow struct {
-		Name string
-		Text string
+func (v *RBACViewer) showRoleDetails(f roleFinding) {
+	rulesText := strings.Join(formatRules(f.Rules), "\n\n")
+	if rulesText == "" {
+		rulesText = "No rules."
 	}
-	var rows []bindingRow
-	for _, binding := range overview.RoleBindings {
-		rows = append(rows, bindingRow{
-			Name: binding.Namespace + "/" + binding.Name,
-			Text: fmt.Sprintf("%s -> %s (%s)", subjectSummary(binding.Subjects), binding.RoleRef.Name, binding.RoleRef.Kind),
-		})
+	fields := []detailField{
+		{Label: "Kind", Value: f.Kind},
+		{Label: "Name", Value: f.Name},
 	}
-	for _, binding := range overview.ClusterRoleBindings {
-		rows = append(rows, bindingRow{
-			Name: binding.Name,
-			Text: fmt.Sprintf("%s -> %s (%s)", subjectSummary(binding.Subjects), binding.RoleRef.Name, binding.RoleRef.Kind),
-		})
+	if f.Namespace != "" {
+		fields = append(fields, detailField{Label: "Namespace", Value: f.Namespace})
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-	if len(rows) == 0 {
-		card.Append(textRow("Bindings", "No RBAC bindings found."))
-		return
+	fields = append(fields, detailField{Label: "Why broad", Value: f.Text})
+
+	sections := []detailSection{
+		{Title: "Role", Fields: fields},
+		{Title: "Rules", Fields: []detailField{{Label: "Policy rules", Value: rulesText}}},
 	}
-	for i, row := range rows {
-		if i >= 80 {
-			card.Append(textRow("More", fmt.Sprintf("%d additional bindings", len(rows)-i)))
-			return
+	if len(f.Labels) > 0 {
+		sections = append(sections, detailSection{Title: "Labels", Fields: kvFields(f.Labels)})
+	}
+	if len(f.Annotations) > 0 {
+		sections = append(sections, detailSection{Title: "Annotations", Fields: kvFields(f.Annotations)})
+	}
+	showDetailsDialog(v.ctx, f.Name, 70, sections)
+}
+
+func (v *RBACViewer) showBindingDetails(b bindingRowData) {
+	fields := []detailField{
+		{Label: "Kind", Value: b.Kind},
+		{Label: "Name", Value: b.Name},
+	}
+	if b.Namespace != "" {
+		fields = append(fields, detailField{Label: "Namespace", Value: b.Namespace})
+	}
+	fields = append(fields,
+		detailField{Label: "Role kind", Value: b.RoleRef.Kind},
+		detailField{Label: "Role name", Value: b.RoleRef.Name},
+		detailField{Label: "Role apiGroup", Value: b.RoleRef.APIGroup},
+	)
+
+	subjectFields := make([]detailField, 0, len(b.Subjects))
+	for _, s := range b.Subjects {
+		name := s.Name
+		if s.Namespace != "" {
+			name = s.Namespace + "/" + name
 		}
-		card.Append(textRow(row.Name, row.Text))
+		subjectFields = append(subjectFields, detailField{Label: s.Kind, Value: name})
 	}
+	if len(subjectFields) == 0 {
+		subjectFields = append(subjectFields, detailField{Label: "Subjects", Value: "None"})
+	}
+
+	sections := []detailSection{
+		{Title: "Binding", Fields: fields},
+		{Title: fmt.Sprintf("Subjects (%d)", len(b.Subjects)), Fields: subjectFields},
+	}
+	showDetailsDialog(v.ctx, b.Name, 0, sections)
+}
+
+func formatRules(rules []rbacv1.PolicyRule) []string {
+	out := make([]string, 0, len(rules))
+	for i, rule := range rules {
+		var parts []string
+		if len(rule.Verbs) > 0 {
+			parts = append(parts, "verbs: "+strings.Join(rule.Verbs, ", "))
+		}
+		if len(rule.APIGroups) > 0 {
+			parts = append(parts, "apiGroups: "+strings.Join(rule.APIGroups, ", "))
+		}
+		if len(rule.Resources) > 0 {
+			parts = append(parts, "resources: "+strings.Join(rule.Resources, ", "))
+		}
+		if len(rule.ResourceNames) > 0 {
+			parts = append(parts, "resourceNames: "+strings.Join(rule.ResourceNames, ", "))
+		}
+		if len(rule.NonResourceURLs) > 0 {
+			parts = append(parts, "nonResourceURLs: "+strings.Join(rule.NonResourceURLs, ", "))
+		}
+		out = append(out, fmt.Sprintf("[%d] %s", i+1, strings.Join(parts, "\n     ")))
+	}
+	return out
+}
+
+func kvFields(m map[string]string) []detailField {
+	out := make([]detailField, 0, len(m))
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, detailField{Label: k, Value: m[k]})
+	}
+	return out
 }
 
 func broadRuleSummary(rules []rbacv1.PolicyRule) string {

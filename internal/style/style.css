@@ -49,6 +49,94 @@ box.benchmark-card {
   background-color: alpha(currentColor, 0.06);
 }
 
+box.stat-tile {
+  padding: 14px 18px;
+  border-radius: 12px;
+  background-color: alpha(currentColor, 0.06);
+  min-width: 140px;
+}
+
+box.stat-tile label.stat-value {
+  font-size: 1.7em;
+  font-weight: 700;
+}
+
+box.stat-tile label.stat-caption {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+box.stat-tile.accent label.stat-value {
+  color: @accent_color;
+}
+
+box.stat-tile.success label.stat-value {
+  color: @success_color;
+}
+
+box.stat-tile.warning label.stat-value {
+  color: @warning_color;
+}
+
+box.stat-tile.error label.stat-value {
+  color: @destructive_color;
+}
+
+label.severity-pill {
+  font-weight: 700;
+  font-size: 0.78em;
+  border-radius: 999px;
+  padding: 2px 9px;
+  background-color: alpha(currentColor, 0.15);
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+label.severity-pill.success {
+  color: @success_color;
+}
+
+label.severity-pill.accent {
+  color: @accent_color;
+}
+
+label.severity-pill.warning {
+  color: @warning_color;
+}
+
+label.severity-pill.error {
+  color: @destructive_color;
+}
+
+label.metric-value {
+  font-feature-settings: "tnum";
+  font-weight: 600;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+label.metric-value.dim {
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+progressbar.benchmark-progress > trough {
+  min-height: 6px;
+  border-radius: 999px;
+  background-color: alpha(currentColor, 0.1);
+}
+
+progressbar.benchmark-progress > trough > progress {
+  min-height: 6px;
+  border-radius: 999px;
+}
+
+progressbar.benchmark-progress text {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
 /* label.pill.success {
   background-color: @success_bg_color;
   color: @success_fg_color;

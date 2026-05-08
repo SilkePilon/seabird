@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/SilkePilon/Orchestrator/internal/ui/common"
+	"github.com/SilkePilon/Orchestrator/widget"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/SilkePilon/Orchestrator/internal/ui/common"
-	"github.com/SilkePilon/Orchestrator/widget"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -18,9 +19,10 @@ type SecurityScanView struct {
 	*adw.ToolbarView
 	*common.ClusterState
 	ctx     context.Context
+	page    *adw.PreferencesPage
 	refresh *gtk.Button
 	status  *gtk.Label
-	results *gtk.Box
+	groups  []*adw.PreferencesGroup
 }
 
 type securityOverview struct {
@@ -40,62 +42,48 @@ type securityFinding struct {
 }
 
 func NewSecurityScanView(ctx context.Context, state *common.ClusterState) *SecurityScanView {
+	tv, page, refresh, status := toolPage(state, "Security Scan", "Refresh security scan")
 	view := &SecurityScanView{
-		ToolbarView:  adw.NewToolbarView(),
+		ToolbarView:  tv,
 		ClusterState: state,
 		ctx:          ctx,
+		page:         page,
+		refresh:      refresh,
+		status:       status,
 	}
-	view.AddCSSClass("view")
-	view.SetTopBarStyle(adw.ToolbarRaised)
-
-	header := adw.NewHeaderBar()
-	header.SetTitleWidget(adw.NewWindowTitle("Security", state.ClusterPreferences.Value().Name))
-
-	view.refresh = gtk.NewButtonFromIconName("view-refresh-symbolic")
-	view.refresh.AddCSSClass("flat")
-	view.refresh.SetTooltipText("Refresh security scan")
+	view.status.SetText("Scanning…")
 	view.refresh.ConnectClicked(view.refreshSecurity)
-	header.PackEnd(view.refresh)
-	view.AddTopBar(header)
-
-	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	page := adw.NewPreferencesPage()
-	scroll.SetChild(page)
-	view.SetContent(scroll)
-
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("Security / Best-Practice Scan")
-	group.SetDescription("Local checks for risky pod settings, missing probes, broad exposure, and weak image hygiene.")
-	page.Add(group)
-
-	view.status = gtk.NewLabel("Scanning cluster...")
-	view.status.SetHAlign(gtk.AlignStart)
-	view.status.AddCSSClass("dim-label")
-	group.Add(view.status)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	group.Add(view.results)
-
 	view.refreshSecurity()
 	return view
 }
 
+func (v *SecurityScanView) clearGroups() {
+	for _, g := range v.groups {
+		v.page.Remove(g)
+	}
+	v.groups = nil
+}
+
+func (v *SecurityScanView) addGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.groups = append(v.groups, g)
+}
+
 func (v *SecurityScanView) refreshSecurity() {
 	v.refresh.SetSensitive(false)
-	v.status.SetText("Scanning cluster...")
-	clearBox(v.results)
+	v.status.SetText("Scanning…")
+	v.clearGroups()
 
 	go func() {
 		overview, err := v.collectSecurity()
 		glib.IdleAdd(func() {
 			v.refresh.SetSensitive(true)
 			if err != nil {
-				v.status.SetText("Security scan failed")
+				v.status.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Could not run security scan", err)
 				return
 			}
-			v.status.SetText("Security scan complete")
+			v.status.SetText(fmt.Sprintf("Updated %s", time.Now().Format("15:04:05")))
 			v.renderSecurity(overview)
 		})
 	}()
@@ -213,33 +201,75 @@ func addSecurityFinding(overview *securityOverview, title, detail string, severi
 }
 
 func (v *SecurityScanView) renderSecurity(overview *securityOverview) {
-	clearBox(v.results)
+	v.clearGroups()
 
-	summary := benchmarkCard()
-	summary.Append(sectionLabel("Summary"))
-	summary.Append(textRow("Pods", fmt.Sprintf("%d", overview.Pods)))
-	summary.Append(textRow("Containers", fmt.Sprintf("%d", overview.Containers)))
-	summary.Append(textRow("Services", fmt.Sprintf("%d", overview.Services)))
-	summary.Append(textRow("Critical findings", fmt.Sprintf("%d", overview.CriticalFindings)))
-	summary.Append(textRow("High findings", fmt.Sprintf("%d", overview.HighFindings)))
-	summary.Append(textRow("Medium findings", fmt.Sprintf("%d", overview.MediumFindings)))
-	v.results.Append(summary)
+	scopeGroup := toolGroup("Scope", "Resources scanned in this run.")
+	statTilesGroup(scopeGroup, []statTile{
+		{Value: fmt.Sprintf("%d", overview.Pods), Caption: "Pods", Style: "accent"},
+		{Value: fmt.Sprintf("%d", overview.Containers), Caption: "Containers", Style: "accent"},
+		{Value: fmt.Sprintf("%d", overview.Services), Caption: "Services", Style: "accent"},
+	})
+	v.addGroup(scopeGroup)
 
-	findings := benchmarkCard()
-	findings.Append(sectionLabel("Findings"))
+	severityGroup := toolGroup("Findings By Severity",
+		"How serious the issues are. Critical and High should be addressed soon.")
+	statTilesGroup(severityGroup, []statTile{
+		{Value: fmt.Sprintf("%d", overview.CriticalFindings), Caption: "Critical", Style: tileStyleForCount(overview.CriticalFindings, true)},
+		{Value: fmt.Sprintf("%d", overview.HighFindings), Caption: "High", Style: tileStyleForCount(overview.HighFindings, true)},
+		{Value: fmt.Sprintf("%d", overview.MediumFindings), Caption: "Medium", Style: tileStyleForCount(overview.MediumFindings, true)},
+	})
+	v.addGroup(severityGroup)
+
+	findingsGroup := toolGroup("Findings",
+		"Each row is a single best-practice or hardening issue, sorted by severity.")
 	if len(overview.Findings) == 0 {
-		findings.Append(textRow("No findings", "No obvious security or best-practice issues were found."))
+		emptyStatusGroup(findingsGroup, "Nothing to flag",
+			"No obvious security or best-practice issues were found.",
+			"emblem-default-symbolic")
 	} else {
-		limit := min(len(overview.Findings), 100)
-		for i := 0; i < limit; i++ {
-			finding := overview.Findings[i]
-			findings.Append(textRow(severityLabel(finding.Severity)+" · "+finding.Title, finding.Detail))
+		const limit = 100
+		for i := 0; i < min(len(overview.Findings), limit); i++ {
+			f := overview.Findings[i]
+			style, label, icon := severityClassification(f.Severity)
+			finding := f
+			findingsGroup.Add(clickableFindingRow(f.Title, f.Detail, icon, label, style, func() {
+				v.showFindingDetails(finding)
+			}))
 		}
 		if len(overview.Findings) > limit {
-			findings.Append(textRow("More", fmt.Sprintf("%d additional findings", len(overview.Findings)-limit)))
+			findingsGroup.Add(metricRow("More",
+				fmt.Sprintf("%d additional findings", len(overview.Findings)-limit), ""))
 		}
 	}
-	v.results.Append(findings)
+	v.addGroup(findingsGroup)
+}
+
+func (v *SecurityScanView) showFindingDetails(f securityFinding) {
+	_, label, _ := severityClassification(f.Severity)
+	category := "Best practice"
+	switch {
+	case f.Severity >= 90:
+		category = "Critical hardening issue"
+	case f.Severity >= 70:
+		category = "High-risk configuration"
+	case f.Severity >= 40:
+		category = "Medium-risk configuration"
+	}
+	sections := []detailSection{
+		{
+			Title: "Finding",
+			Fields: []detailField{
+				{Label: "Resource", Value: f.Title},
+				{Label: "Issue", Value: f.Detail},
+				{Label: "Category", Value: category},
+			},
+		},
+		{
+			Title:       "What this means",
+			Description: "This finding is reported when a workload deviates from a Kubernetes hardening best practice. Review the resource's spec and adjust the highlighted setting if appropriate for your environment.",
+		},
+	}
+	showDetailsDialog(v.ctx, fmt.Sprintf("%s — %s", label, f.Title), f.Severity, sections)
 }
 
 func imageUsesLatest(image string) bool {
@@ -257,17 +287,4 @@ func capabilityList(caps []corev1.Capability) string {
 		values = append(values, string(cap))
 	}
 	return strings.Join(values, ", ")
-}
-
-func severityLabel(severity int) string {
-	switch {
-	case severity >= 90:
-		return "Critical"
-	case severity >= 70:
-		return "High"
-	case severity >= 40:
-		return "Medium"
-	default:
-		return "Low"
-	}
 }

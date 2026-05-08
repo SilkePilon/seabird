@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -90,7 +91,9 @@ type BenchmarkView struct {
 	saveButton   *gtk.Button
 	status       *gtk.Label
 	progress     *gtk.ProgressBar
-	results      *gtk.Box
+	page         *adw.PreferencesPage
+	resultGroups []*adw.PreferencesGroup
+	runCancel    context.CancelFunc
 
 	nodes []corev1.Node
 	last  *benchmarkResult
@@ -206,7 +209,7 @@ func NewBenchmarkView(ctx context.Context, state *common.ClusterState) *Benchmar
 
 	view.runButton = gtk.NewButtonWithLabel("Run")
 	view.runButton.AddCSSClass("suggested-action")
-	view.runButton.ConnectClicked(view.run)
+	view.runButton.ConnectClicked(view.onRunButtonClicked)
 	header.PackEnd(view.runButton)
 
 	view.saveButton = gtk.NewButtonFromIconName("document-save-symbolic")
@@ -223,6 +226,7 @@ func NewBenchmarkView(ctx context.Context, state *common.ClusterState) *Benchmar
 	page := adw.NewPreferencesPage()
 	scroll.SetChild(page)
 	view.SetContent(scroll)
+	view.page = page
 
 	options := adw.NewPreferencesGroup()
 	options.SetTitle("Benchmark Options")
@@ -282,21 +286,23 @@ func NewBenchmarkView(ctx context.Context, state *common.ClusterState) *Benchmar
 	options.Add(view.samples)
 
 	resultsGroup := adw.NewPreferencesGroup()
-	resultsGroup.SetTitle("Results")
+	resultsGroup.SetTitle("Status")
 	page.Add(resultsGroup)
 
 	view.status = gtk.NewLabel("Run a benchmark to see results.")
 	view.status.SetHAlign(gtk.AlignStart)
+	view.status.SetWrap(true)
 	view.status.AddCSSClass("dim-label")
 	resultsGroup.Add(view.status)
 
 	view.progress = gtk.NewProgressBar()
 	view.progress.SetShowText(true)
 	view.progress.SetVisible(false)
+	view.progress.AddCSSClass("benchmark-progress")
+	view.progress.SetVAlign(gtk.AlignCenter)
+	view.progress.SetMarginTop(6)
+	view.progress.SetMarginBottom(6)
 	resultsGroup.Add(view.progress)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	resultsGroup.Add(view.results)
 
 	view.refreshNodes()
 	return view
@@ -315,14 +321,47 @@ func (v *BenchmarkView) refreshNodes() {
 	}
 }
 
-func (v *BenchmarkView) run() {
+func (v *BenchmarkView) onRunButtonClicked() {
+	if v.runCancel != nil {
+		v.cancelRun()
+		return
+	}
+	v.run()
+}
+
+func (v *BenchmarkView) setRunButtonRunning(running bool) {
+	if running {
+		v.runButton.SetLabel("Cancel")
+		v.runButton.RemoveCSSClass("suggested-action")
+		v.runButton.AddCSSClass("destructive-action")
+		v.runButton.SetTooltipText("Cancel the running benchmark")
+	} else {
+		v.runButton.SetLabel("Run")
+		v.runButton.RemoveCSSClass("destructive-action")
+		v.runButton.AddCSSClass("suggested-action")
+		v.runButton.SetTooltipText("")
+	}
+}
+
+func (v *BenchmarkView) cancelRun() {
+	if v.runCancel == nil {
+		return
+	}
+	v.status.SetText("Cancelling benchmark…")
 	v.runButton.SetSensitive(false)
+	v.runCancel()
+}
+
+func (v *BenchmarkView) run() {
+	runCtx, cancel := context.WithCancel(v.ctx)
+	v.runCancel = cancel
+	v.setRunButtonRunning(true)
 	v.saveButton.SetSensitive(false)
-	v.status.SetText("Running benchmark...")
+	v.status.SetText("Running benchmark…")
 	v.progress.SetVisible(true)
 	v.progress.SetFraction(0)
 	v.progress.SetText("Preparing")
-	clearBox(v.results)
+	v.clearResultGroups()
 
 	target := "All nodes"
 	if selected := v.target.Selected(); selected > 0 && selected-1 < uint(len(v.nodes)) {
@@ -355,15 +394,26 @@ func (v *BenchmarkView) run() {
 	}
 
 	go func() {
-		result, err := v.collectBenchmark(target, options, report)
-		history, historyErr := v.loadBenchmarkHistory()
-		saveErr := error(nil)
+		result, err := v.collectBenchmark(runCtx, target, options, report)
+		var history []benchmarkResult
+		var historyErr error
+		var saveErr error
 		if err == nil {
+			history, historyErr = v.loadBenchmarkHistory()
 			saveErr = v.saveBenchmarkHistory(result)
 		}
 		glib.IdleAdd(func() {
+			cancel()
+			v.runCancel = nil
+			v.setRunButtonRunning(false)
 			v.runButton.SetSensitive(true)
 			if err != nil {
+				if errors.Is(err, context.Canceled) || runCtx.Err() == context.Canceled {
+					v.status.SetText("Benchmark cancelled.")
+					v.progress.SetText("Cancelled")
+					v.progress.SetFraction(0)
+					return
+				}
 				v.status.SetText("Benchmark failed.")
 				v.progress.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Benchmark failed", err)
@@ -385,8 +435,8 @@ func (v *BenchmarkView) run() {
 	}()
 }
 
-func (v *BenchmarkView) collectBenchmark(target string, options benchmarkOptions, report benchmarkProgressFunc) (*benchmarkResult, error) {
-	ctx, cancel := context.WithTimeout(v.ctx, 10*time.Minute)
+func (v *BenchmarkView) collectBenchmark(parent context.Context, target string, options benchmarkOptions, report benchmarkProgressFunc) (*benchmarkResult, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 
 	started := time.Now()
@@ -1129,8 +1179,20 @@ func benchmarkJobName(kind, nodeName string) string {
 	return fmt.Sprintf("orchestrator-%s-%s-%s", kind, base, suffix)
 }
 
+func (v *BenchmarkView) clearResultGroups() {
+	for _, g := range v.resultGroups {
+		v.page.Remove(g)
+	}
+	v.resultGroups = nil
+}
+
+func (v *BenchmarkView) addResultGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.resultGroups = append(v.resultGroups, g)
+}
+
 func (v *BenchmarkView) renderResult(result *benchmarkResult) {
-	clearBox(v.results)
+	v.clearResultGroups()
 	maxCPUScore := 0.0
 	maxMemoryScore := 0.0
 	maxDiskReadScore := 0.0
@@ -1153,120 +1215,178 @@ func (v *BenchmarkView) renderResult(result *benchmarkResult) {
 			maxNetworkScore = max(maxNetworkScore, node.NetworkBenchmark.MbitsPerSecond)
 		}
 	}
+
+	// Run summary tiles
+	summaryGroup := toolGroup("Run Summary",
+		fmt.Sprintf("%s · finished %s", result.Target, result.FinishedAt.Format("Jan 2 15:04:05")))
+	duration := result.FinishedAt.Sub(result.StartedAt).Round(time.Second)
+	readyNodes := 0
+	for _, n := range result.Nodes {
+		if n.Ready {
+			readyNodes++
+		}
+	}
+	readyStyle, readyText := healthBadge(readyNodes, len(result.Nodes))
+	tiles := []statTile{
+		{Value: readyText, Caption: "Nodes ready", Style: readyStyle},
+		{Value: duration.String(), Caption: "Duration", Style: "accent"},
+	}
 	if result.APILatency != nil {
-		card := benchmarkCard()
-		card.Append(sectionLabel("Cluster API"))
-		card.Append(barRow("Average latency", fmt.Sprintf("%.1f ms", result.APILatency.AvgMS), result.APILatency.AvgMS, max(result.APILatency.MaxMS, 1)))
-		card.Append(barRow("Fastest", fmt.Sprintf("%.1f ms", result.APILatency.MinMS), result.APILatency.MinMS, max(result.APILatency.MaxMS, 1)))
-		card.Append(barRow("Slowest", fmt.Sprintf("%.1f ms", result.APILatency.MaxMS), result.APILatency.MaxMS, max(result.APILatency.MaxMS, 1)))
-		v.results.Append(card)
+		tiles = append(tiles, statTile{
+			Value:   fmt.Sprintf("%.0f ms", result.APILatency.AvgMS),
+			Caption: "API avg latency",
+			Style:   "accent",
+		})
+	}
+	statTilesGroup(summaryGroup, tiles)
+	v.addResultGroup(summaryGroup)
+
+	if result.APILatency != nil {
+		apiGroup := toolGroup("Cluster API Latency",
+			fmt.Sprintf("Measured over %d sample(s).", result.APILatency.Samples))
+		apiMax := max(result.APILatency.MaxMS, 1)
+		apiGroup.Add(progressRow("Average", fmt.Sprintf("%.1f ms", result.APILatency.AvgMS), result.APILatency.AvgMS, apiMax))
+		apiGroup.Add(progressRow("Fastest", fmt.Sprintf("%.1f ms", result.APILatency.MinMS), result.APILatency.MinMS, apiMax))
+		apiGroup.Add(progressRow("Slowest", fmt.Sprintf("%.1f ms", result.APILatency.MaxMS), result.APILatency.MaxMS, apiMax))
+		if result.APILatency.Errors > 0 {
+			apiGroup.Add(metricRow("Errors", "Failed list calls during sampling", fmt.Sprintf("%d", result.APILatency.Errors)))
+		}
+		v.addResultGroup(apiGroup)
 	}
 
 	for _, node := range result.Nodes {
-		card := benchmarkCard()
-		card.Append(sectionLabel(node.Name))
-		ready := "Not ready"
+		readyText := "Not ready"
 		if node.Ready {
-			ready = "Ready"
+			readyText = "Ready"
 		}
-		card.Append(textRow("Status", ready))
+		nodeGroup := toolGroup(node.Name, readyText)
+
 		if node.CPUBenchmark != nil {
 			if node.CPUBenchmark.Error != "" {
-				card.Append(textRow("CPU score", node.CPUBenchmark.Error))
+				nodeGroup.Add(metricRow("CPU score", node.CPUBenchmark.Error, ""))
 			} else {
-				text := fmt.Sprintf("%.0f events/s", node.CPUBenchmark.EventsPerSecond)
+				subtitle := "sysbench CPU events"
 				if node.CPUBenchmark.Threads > 0 {
-					text = fmt.Sprintf("%s · %d threads", text, node.CPUBenchmark.Threads)
+					subtitle = fmt.Sprintf("sysbench · %d threads", node.CPUBenchmark.Threads)
 				}
-				card.Append(barRow("CPU score", text, node.CPUBenchmark.EventsPerSecond, max(maxCPUScore, 1)))
+				nodeGroup.Add(progressRow("CPU score",
+					fmt.Sprintf("%.0f events/s", node.CPUBenchmark.EventsPerSecond),
+					node.CPUBenchmark.EventsPerSecond, max(maxCPUScore, 1)))
+				nodeGroup.Add(metricRow("CPU details", subtitle,
+					fmt.Sprintf("%.1fs", node.CPUBenchmark.WallTimeSeconds)))
 			}
 		}
 		if node.MemoryBenchmark != nil {
 			if node.MemoryBenchmark.Error != "" {
-				card.Append(textRow("Memory bandwidth", node.MemoryBenchmark.Error))
+				nodeGroup.Add(metricRow("Memory bandwidth", node.MemoryBenchmark.Error, ""))
 			} else {
-				text := fmt.Sprintf("%.0f MiB/s", node.MemoryBenchmark.MiBPerSecond)
-				if node.MemoryBenchmark.Threads > 0 {
-					text = fmt.Sprintf("%s · %d threads", text, node.MemoryBenchmark.Threads)
-				}
-				card.Append(barRow("Memory bandwidth", text, node.MemoryBenchmark.MiBPerSecond, max(maxMemoryScore, 1)))
+				nodeGroup.Add(progressRow("Memory bandwidth",
+					fmt.Sprintf("%.0f MiB/s", node.MemoryBenchmark.MiBPerSecond),
+					node.MemoryBenchmark.MiBPerSecond, max(maxMemoryScore, 1)))
 			}
 		}
 		if node.DiskBenchmark != nil {
 			if node.DiskBenchmark.Error != "" {
-				card.Append(textRow("Disk I/O", node.DiskBenchmark.Error))
+				nodeGroup.Add(metricRow("Disk I/O", node.DiskBenchmark.Error, ""))
 			} else {
-				card.Append(barRow("Sequential read", fmt.Sprintf("%.1f MiB/s", node.DiskBenchmark.SequentialReadMiBPerSec), node.DiskBenchmark.SequentialReadMiBPerSec, max(maxDiskReadScore, 1)))
-				card.Append(barRow("Sequential write", fmt.Sprintf("%.1f MiB/s", node.DiskBenchmark.SequentialWriteMiBPerSec), node.DiskBenchmark.SequentialWriteMiBPerSec, max(maxDiskWriteScore, 1)))
-				card.Append(barRow("4K random read", fmt.Sprintf("%.1f MiB/s · %.0f IOPS · %.0f us", node.DiskBenchmark.RandomReadMiBPerSec, node.DiskBenchmark.RandomReadIOPS, node.DiskBenchmark.RandomReadLatencyUS), node.DiskBenchmark.RandomReadMiBPerSec, max(maxDiskReadScore, 1)))
-				card.Append(barRow("4K random write", fmt.Sprintf("%.1f MiB/s · %.0f IOPS · %.0f us", node.DiskBenchmark.RandomWriteMiBPerSec, node.DiskBenchmark.RandomWriteIOPS, node.DiskBenchmark.RandomWriteLatencyUS), node.DiskBenchmark.RandomWriteMiBPerSec, max(maxDiskWriteScore, 1)))
+				nodeGroup.Add(progressRow("Sequential read",
+					fmt.Sprintf("%.1f MiB/s", node.DiskBenchmark.SequentialReadMiBPerSec),
+					node.DiskBenchmark.SequentialReadMiBPerSec, max(maxDiskReadScore, 1)))
+				nodeGroup.Add(progressRow("Sequential write",
+					fmt.Sprintf("%.1f MiB/s", node.DiskBenchmark.SequentialWriteMiBPerSec),
+					node.DiskBenchmark.SequentialWriteMiBPerSec, max(maxDiskWriteScore, 1)))
+				nodeGroup.Add(progressRow("4K random read",
+					fmt.Sprintf("%.0f IOPS · %.0f µs", node.DiskBenchmark.RandomReadIOPS, node.DiskBenchmark.RandomReadLatencyUS),
+					node.DiskBenchmark.RandomReadMiBPerSec, max(maxDiskReadScore, 1)))
+				nodeGroup.Add(progressRow("4K random write",
+					fmt.Sprintf("%.0f IOPS · %.0f µs", node.DiskBenchmark.RandomWriteIOPS, node.DiskBenchmark.RandomWriteLatencyUS),
+					node.DiskBenchmark.RandomWriteMiBPerSec, max(maxDiskWriteScore, 1)))
 			}
 		}
 		if node.NetworkBenchmark != nil {
-			if node.NetworkBenchmark.Error != "" {
-				card.Append(textRow("Network throughput", node.NetworkBenchmark.Error))
-			} else if node.NetworkBenchmark.Role == "server" {
-				card.Append(textRow("Network throughput", "iperf3 server for selected nodes"))
-			} else {
-				text := fmt.Sprintf("%.1f Mbit/s to %s", node.NetworkBenchmark.MbitsPerSecond, node.NetworkBenchmark.PeerNode)
+			switch {
+			case node.NetworkBenchmark.Error != "":
+				nodeGroup.Add(metricRow("Network throughput", node.NetworkBenchmark.Error, ""))
+			case node.NetworkBenchmark.Role == "server":
+				nodeGroup.Add(metricRow("Network throughput", "iperf3 server for selected nodes", "—"))
+			default:
+				subtitle := fmt.Sprintf("to %s", node.NetworkBenchmark.PeerNode)
 				if node.NetworkBenchmark.Retransmits > 0 {
-					text = fmt.Sprintf("%s · %d retransmits", text, node.NetworkBenchmark.Retransmits)
+					subtitle = fmt.Sprintf("%s · %d retransmits", subtitle, node.NetworkBenchmark.Retransmits)
 				}
-				card.Append(barRow("Network throughput", text, node.NetworkBenchmark.MbitsPerSecond, max(maxNetworkScore, 1)))
+				nodeGroup.Add(progressRow("Network throughput",
+					fmt.Sprintf("%.1f Mbit/s", node.NetworkBenchmark.MbitsPerSecond),
+					node.NetworkBenchmark.MbitsPerSecond, max(maxNetworkScore, 1)))
+				nodeGroup.Add(metricRow("Peer", subtitle, node.NetworkBenchmark.PeerNode))
 			}
 		}
 		if result.Options.ResourceScan {
 			if node.CPUUsageMilli != nil && node.CPUAllocatableMilli > 0 {
-				card.Append(barRow("CPU usage", fmt.Sprintf("%dm / %dm", *node.CPUUsageMilli, node.CPUAllocatableMilli), float64(*node.CPUUsageMilli), float64(node.CPUAllocatableMilli)))
+				nodeGroup.Add(progressRow("CPU usage",
+					fmt.Sprintf("%dm / %dm", *node.CPUUsageMilli, node.CPUAllocatableMilli),
+					float64(*node.CPUUsageMilli), float64(node.CPUAllocatableMilli)))
 			} else {
-				card.Append(textRow("CPU usage", "metrics unavailable"))
+				nodeGroup.Add(metricRow("CPU usage", "metrics-server unavailable", "—"))
 			}
-			card.Append(barRow("CPU allocatable", fmt.Sprintf("%dm / %dm", node.CPUAllocatableMilli, node.CPUCapacityMilli), float64(node.CPUAllocatableMilli), float64(node.CPUCapacityMilli)))
+			nodeGroup.Add(progressRow("CPU allocatable",
+				fmt.Sprintf("%dm / %dm", node.CPUAllocatableMilli, node.CPUCapacityMilli),
+				float64(node.CPUAllocatableMilli), float64(node.CPUCapacityMilli)))
 			if node.MemoryUsageBytes != nil && node.MemoryAllocatableBytes > 0 {
-				card.Append(barRow("Memory usage", fmt.Sprintf("%s / %s", formatBytes(*node.MemoryUsageBytes), formatBytes(node.MemoryAllocatableBytes)), float64(*node.MemoryUsageBytes), float64(node.MemoryAllocatableBytes)))
+				nodeGroup.Add(progressRow("Memory usage",
+					fmt.Sprintf("%s / %s", formatBytes(*node.MemoryUsageBytes), formatBytes(node.MemoryAllocatableBytes)),
+					float64(*node.MemoryUsageBytes), float64(node.MemoryAllocatableBytes)))
 			} else {
-				card.Append(textRow("Memory usage", "metrics unavailable"))
+				nodeGroup.Add(metricRow("Memory usage", "metrics-server unavailable", "—"))
 			}
-			card.Append(barRow("Memory allocatable", fmt.Sprintf("%s / %s", formatBytes(node.MemoryAllocatableBytes), formatBytes(node.MemoryCapacityBytes)), float64(node.MemoryAllocatableBytes), float64(node.MemoryCapacityBytes)))
+			nodeGroup.Add(progressRow("Memory allocatable",
+				fmt.Sprintf("%s / %s", formatBytes(node.MemoryAllocatableBytes), formatBytes(node.MemoryCapacityBytes)),
+				float64(node.MemoryAllocatableBytes), float64(node.MemoryCapacityBytes)))
 		}
 		if node.PodCount != nil && node.PodCapacity > 0 {
-			card.Append(barRow("Pod density", fmt.Sprintf("%d / %d pods", *node.PodCount, node.PodCapacity), float64(*node.PodCount), float64(node.PodCapacity)))
+			nodeGroup.Add(progressRow("Pod density",
+				fmt.Sprintf("%d / %d pods", *node.PodCount, node.PodCapacity),
+				float64(*node.PodCount), float64(node.PodCapacity)))
 		}
 		if result.Options.ResourceScan {
 			if node.PowerDrawWatts != nil {
-				card.Append(textRow("Power draw", fmt.Sprintf("%.1f W", *node.PowerDrawWatts)))
+				nodeGroup.Add(metricRow("Power draw", "Reported by metrics-server", fmt.Sprintf("%.1f W", *node.PowerDrawWatts)))
 			} else {
-				card.Append(textRow("Power draw", node.PowerSource))
+				nodeGroup.Add(metricRow("Power draw", node.PowerSource, "—"))
 			}
 		}
-		v.results.Append(card)
+		v.addResultGroup(nodeGroup)
 	}
 }
 
 func (v *BenchmarkView) renderBenchmarkHistory(current *benchmarkResult, history []benchmarkResult) {
-	historyCard := benchmarkCard()
-	historyCard.Append(sectionLabel("Benchmark History"))
 	if len(history) == 0 {
-		historyCard.Append(textRow("Previous runs", "No previous benchmark runs saved for this cluster."))
-		v.results.Append(historyCard)
+		historyGroup := toolGroup("Benchmark History", "Previous runs are saved per cluster.")
+		emptyStatusGroup(historyGroup, "No previous runs",
+			"This is the first benchmark saved for this cluster.",
+			"emblem-default-symbolic")
+		v.addResultGroup(historyGroup)
 		return
 	}
 
-	previous := firstComparableBenchmark(current, history)
-	if previous != nil {
-		compareCard := benchmarkCard()
-		compareCard.Append(sectionLabel("Compared With Previous Run"))
-		compareCard.Append(textRow("Previous run", previous.FinishedAt.Format("Jan 2 15:04:05")))
-		appendBenchmarkComparisons(compareCard, current, previous)
-		v.results.Append(compareCard)
+	if previous := firstComparableBenchmark(current, history); previous != nil {
+		compareGroup := toolGroup("Compared With Previous Run",
+			"Previous run "+previous.FinishedAt.Format("Jan 2 15:04:05"))
+		appendBenchmarkComparisons(compareGroup, current, previous)
+		v.addResultGroup(compareGroup)
 	}
 
+	historyGroup := toolGroup("Benchmark History",
+		fmt.Sprintf("%d previous run(s) saved for this cluster.", len(history)))
 	limit := min(len(history), 5)
 	for i := 0; i < limit; i++ {
 		run := history[i]
-		historyCard.Append(textRow(run.FinishedAt.Format("Jan 2 15:04:05"), fmt.Sprintf("%s · %d nodes", run.Target, len(run.Nodes))))
+		historyGroup.Add(metricRow(
+			run.FinishedAt.Format("Jan 2 15:04:05"),
+			fmt.Sprintf("%s · %d nodes", run.Target, len(run.Nodes)),
+			run.FinishedAt.Format("15:04:05"),
+		))
 	}
-	v.results.Append(historyCard)
+	v.addResultGroup(historyGroup)
 }
 
 func firstComparableBenchmark(current *benchmarkResult, history []benchmarkResult) *benchmarkResult {
@@ -1278,7 +1398,7 @@ func firstComparableBenchmark(current *benchmarkResult, history []benchmarkResul
 	return nil
 }
 
-func appendBenchmarkComparisons(card *gtk.Box, current, previous *benchmarkResult) {
+func appendBenchmarkComparisons(group *adw.PreferencesGroup, current, previous *benchmarkResult) {
 	previousNodes := map[string]benchmarkNodeResult{}
 	for _, node := range previous.Nodes {
 		previousNodes[node.Name] = node
@@ -1290,29 +1410,35 @@ func appendBenchmarkComparisons(card *gtk.Box, current, previous *benchmarkResul
 			continue
 		}
 		if node.CPUBenchmark != nil && previousNode.CPUBenchmark != nil && node.CPUBenchmark.Error == "" && previousNode.CPUBenchmark.Error == "" {
-			card.Append(textRow(node.Name+" CPU", benchmarkDelta(node.CPUBenchmark.EventsPerSecond, previousNode.CPUBenchmark.EventsPerSecond, "events/s")))
+			delta, value := benchmarkDelta(node.CPUBenchmark.EventsPerSecond, previousNode.CPUBenchmark.EventsPerSecond, "events/s")
+			group.Add(metricRow(node.Name+" · CPU", delta, value))
 			rows++
 		}
 		if node.MemoryBenchmark != nil && previousNode.MemoryBenchmark != nil && node.MemoryBenchmark.Error == "" && previousNode.MemoryBenchmark.Error == "" {
-			card.Append(textRow(node.Name+" memory", benchmarkDelta(node.MemoryBenchmark.MiBPerSecond, previousNode.MemoryBenchmark.MiBPerSecond, "MiB/s")))
+			delta, value := benchmarkDelta(node.MemoryBenchmark.MiBPerSecond, previousNode.MemoryBenchmark.MiBPerSecond, "MiB/s")
+			group.Add(metricRow(node.Name+" · Memory", delta, value))
 			rows++
 		}
 		if node.NetworkBenchmark != nil && previousNode.NetworkBenchmark != nil && node.NetworkBenchmark.Error == "" && previousNode.NetworkBenchmark.Error == "" && node.NetworkBenchmark.Role != "server" {
-			card.Append(textRow(node.Name+" network", benchmarkDelta(node.NetworkBenchmark.MbitsPerSecond, previousNode.NetworkBenchmark.MbitsPerSecond, "Mbit/s")))
+			delta, value := benchmarkDelta(node.NetworkBenchmark.MbitsPerSecond, previousNode.NetworkBenchmark.MbitsPerSecond, "Mbit/s")
+			group.Add(metricRow(node.Name+" · Network", delta, value))
 			rows++
 		}
 	}
 	if rows == 0 {
-		card.Append(textRow("Comparable metrics", "No matching benchmark metrics were available to compare."))
+		emptyStatusGroup(group, "Nothing to compare",
+			"No matching benchmark metrics were available between the runs.",
+			"emblem-default-symbolic")
 	}
 }
 
-func benchmarkDelta(current, previous float64, unit string) string {
+func benchmarkDelta(current, previous float64, unit string) (subtitle, value string) {
+	value = fmt.Sprintf("%.1f %s", current, unit)
 	if previous == 0 {
-		return fmt.Sprintf("%.1f %s", current, unit)
+		return "no previous value", value
 	}
 	change := ((current - previous) / previous) * 100
-	return fmt.Sprintf("%.1f %s vs %.1f %s (%+.1f%%)", current, unit, previous, unit, change)
+	return fmt.Sprintf("%.1f %s previously · %+.1f%%", previous, unit, change), value
 }
 
 func benchmarkCard() *gtk.Box {

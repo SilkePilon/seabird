@@ -320,12 +320,12 @@ func (n *Navigation) createResourceList(prefs api.ClusterPreferences) *gtk.ListB
 
 	thematic := n.createHeaderRow("Tools")
 	n.resourceList.Append(thematic)
-	n.resourceList.Append(n.createToolRow("health", "Health", "Cluster status, workload issues, and warning events", "heart-outline-thick-symbolic"))
-	n.resourceList.Append(n.createToolRow("timeline", "Timeline", "Events, restarts, and rollout problem history", "delay-small-symbolic"))
-	n.resourceList.Append(n.createToolRow("benchmark", "Benchmark", "Cluster performance and node resource results", "speedometer-symbolic"))
-	n.resourceList.Append(n.createToolRow("rbac", "RBAC", "Roles, bindings, subjects, and broad access", "permissions-generic-symbolic"))
-	n.resourceList.Append(n.createToolRow("cost", "Cost", "Waste, missing requests, and idle workload hints", "wallet-symbolic"))
-	n.resourceList.Append(n.createToolRow("security", "Security", "Workload posture and best-practice checks", "shield-warning-symbolic"))
+	n.resourceList.Append(n.createToolRow("health", "Health", "Cluster overview", "heart-outline-thick-symbolic"))
+	n.resourceList.Append(n.createToolRow("timeline", "Timeline", "Recent problems", "delay-small-symbolic"))
+	n.resourceList.Append(n.createToolRow("benchmark", "Benchmark", "Performance tests", "speedometer-symbolic"))
+	n.resourceList.Append(n.createToolRow("rbac", "RBAC", "Access & roles", "permissions-generic-symbolic"))
+	n.resourceList.Append(n.createToolRow("cost", "Cost", "Waste & idle", "wallet-symbolic"))
+	n.resourceList.Append(n.createToolRow("security", "Security", "Posture checks", "shield-warning-symbolic"))
 
 	if len(n.favourites) > 0 {
 		header := n.createHeaderRow("Favourites")

@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
+	"github.com/SilkePilon/Orchestrator/internal/ui/common"
+	"github.com/SilkePilon/Orchestrator/widget"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/SilkePilon/Orchestrator/internal/ui/common"
-	"github.com/SilkePilon/Orchestrator/widget"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
@@ -19,9 +20,10 @@ type CostWasteView struct {
 	*adw.ToolbarView
 	*common.ClusterState
 	ctx     context.Context
+	page    *adw.PreferencesPage
 	refresh *gtk.Button
 	status  *gtk.Label
-	results *gtk.Box
+	groups  []*adw.PreferencesGroup
 }
 
 type costWasteOverview struct {
@@ -42,62 +44,48 @@ type costWasteFinding struct {
 }
 
 func NewCostWasteView(ctx context.Context, state *common.ClusterState) *CostWasteView {
+	tv, page, refresh, status := toolPage(state, "Cost & Waste", "Refresh cost and waste recommendations")
 	view := &CostWasteView{
-		ToolbarView:  adw.NewToolbarView(),
+		ToolbarView:  tv,
 		ClusterState: state,
 		ctx:          ctx,
+		page:         page,
+		refresh:      refresh,
+		status:       status,
 	}
-	view.AddCSSClass("view")
-	view.SetTopBarStyle(adw.ToolbarRaised)
-
-	header := adw.NewHeaderBar()
-	header.SetTitleWidget(adw.NewWindowTitle("Cost", state.ClusterPreferences.Value().Name))
-
-	view.refresh = gtk.NewButtonFromIconName("view-refresh-symbolic")
-	view.refresh.AddCSSClass("flat")
-	view.refresh.SetTooltipText("Refresh cost and waste recommendations")
+	view.status.SetText("Loading…")
 	view.refresh.ConnectClicked(view.refreshCostWaste)
-	header.PackEnd(view.refresh)
-	view.AddTopBar(header)
-
-	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	page := adw.NewPreferencesPage()
-	scroll.SetChild(page)
-	view.SetContent(scroll)
-
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("Cost / Waste Recommendations")
-	group.SetDescription("Request, limit, and metrics-based hints for wasted or hard-to-price workloads.")
-	page.Add(group)
-
-	view.status = gtk.NewLabel("Loading recommendations...")
-	view.status.SetHAlign(gtk.AlignStart)
-	view.status.AddCSSClass("dim-label")
-	group.Add(view.status)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	group.Add(view.results)
-
 	view.refreshCostWaste()
 	return view
 }
 
+func (v *CostWasteView) clearGroups() {
+	for _, g := range v.groups {
+		v.page.Remove(g)
+	}
+	v.groups = nil
+}
+
+func (v *CostWasteView) addGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.groups = append(v.groups, g)
+}
+
 func (v *CostWasteView) refreshCostWaste() {
 	v.refresh.SetSensitive(false)
-	v.status.SetText("Refreshing recommendations...")
-	clearBox(v.results)
+	v.status.SetText("Refreshing…")
+	v.clearGroups()
 
 	go func() {
 		overview, err := v.collectCostWaste()
 		glib.IdleAdd(func() {
 			v.refresh.SetSensitive(true)
 			if err != nil {
-				v.status.SetText("Could not load recommendations")
+				v.status.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Could not load cost recommendations", err)
 				return
 			}
-			v.status.SetText("Recommendations loaded")
+			v.status.SetText(fmt.Sprintf("Updated %s", time.Now().Format("15:04:05")))
 			v.renderCostWaste(overview)
 		})
 	}()
@@ -176,34 +164,72 @@ func (v *CostWasteView) collectCostWaste() (*costWasteOverview, error) {
 }
 
 func (v *CostWasteView) renderCostWaste(overview *costWasteOverview) {
-	clearBox(v.results)
+	v.clearGroups()
 
-	summary := benchmarkCard()
-	summary.Append(sectionLabel("Summary"))
-	summary.Append(textRow("Pods", fmt.Sprintf("%d", overview.Pods)))
-	summary.Append(textRow("Containers", fmt.Sprintf("%d", overview.Containers)))
-	summary.Append(textRow("Missing CPU requests", fmt.Sprintf("%d", overview.MissingCPURequests)))
-	summary.Append(textRow("Missing memory requests", fmt.Sprintf("%d", overview.MissingMemoryRequests)))
-	summary.Append(textRow("Missing CPU and memory limits", fmt.Sprintf("%d", overview.MissingLimits)))
-	summary.Append(textRow("Potential idle CPU request", fmt.Sprintf("%dm", overview.IdleCPURequestMilli)))
-	summary.Append(textRow("Potential idle memory request", bytesQuantity(overview.IdleMemoryRequest)))
-	v.results.Append(summary)
+	overviewGroup := toolGroup("Overview", "Workload coverage and headline waste indicators.")
+	statTilesGroup(overviewGroup, []statTile{
+		{Value: fmt.Sprintf("%d", overview.Pods), Caption: "Pods", Style: "accent"},
+		{Value: fmt.Sprintf("%d", overview.Containers), Caption: "Containers", Style: "accent"},
+		{Value: fmt.Sprintf("%d", len(overview.Findings)), Caption: "Recommendations", Style: tileStyleForCount(len(overview.Findings), true)},
+	})
+	v.addGroup(overviewGroup)
 
-	findings := benchmarkCard()
-	findings.Append(sectionLabel("Recommendations"))
+	requestsGroup := toolGroup("Requests & Limits", "Coverage of CPU and memory requests and limits.")
+	requestsGroup.Add(metricRow("Missing CPU requests", "Containers without spec.resources.requests.cpu",
+		fmt.Sprintf("%d", overview.MissingCPURequests)))
+	requestsGroup.Add(metricRow("Missing memory requests", "Containers without spec.resources.requests.memory",
+		fmt.Sprintf("%d", overview.MissingMemoryRequests)))
+	requestsGroup.Add(metricRow("Missing CPU and memory limits", "Containers without any limits set",
+		fmt.Sprintf("%d", overview.MissingLimits)))
+	v.addGroup(requestsGroup)
+
+	wasteGroup := toolGroup("Potential Waste", "Reserved capacity that current usage does not justify.")
+	wasteGroup.Add(metricRow("Idle CPU request", "Sum across containers using less than 1/5 of their request",
+		fmt.Sprintf("%dm", overview.IdleCPURequestMilli)))
+	wasteGroup.Add(metricRow("Idle memory request", "Sum across containers using less than 1/3 of their request",
+		bytesQuantity(overview.IdleMemoryRequest)))
+	v.addGroup(wasteGroup)
+
+	findingsGroup := toolGroup("Recommendations",
+		"Actionable hints sorted by severity. Highest impact first.")
 	if len(overview.Findings) == 0 {
-		findings.Append(textRow("No recommendations", "Requests and current metrics do not show obvious waste."))
+		emptyStatusGroup(findingsGroup, "Nothing to recommend",
+			"Requests and current metrics do not show obvious waste.",
+			"emblem-default-symbolic")
 	} else {
-		limit := min(len(overview.Findings), 80)
-		for i := 0; i < limit; i++ {
-			finding := overview.Findings[i]
-			findings.Append(textRow(finding.Title, finding.Detail))
+		const limit = 80
+		for i := 0; i < min(len(overview.Findings), limit); i++ {
+			f := overview.Findings[i]
+			style, label, icon := severityClassification(f.Severity)
+			finding := f
+			findingsGroup.Add(clickableFindingRow(f.Title, f.Detail, icon, label, style, func() {
+				v.showRecommendationDetails(finding)
+			}))
 		}
 		if len(overview.Findings) > limit {
-			findings.Append(textRow("More", fmt.Sprintf("%d additional recommendations", len(overview.Findings)-limit)))
+			findingsGroup.Add(metricRow("More",
+				fmt.Sprintf("%d additional recommendations", len(overview.Findings)-limit), ""))
 		}
 	}
-	v.results.Append(findings)
+	v.addGroup(findingsGroup)
+}
+
+func (v *CostWasteView) showRecommendationDetails(f costWasteFinding) {
+	_, label, _ := severityClassification(f.Severity)
+	sections := []detailSection{
+		{
+			Title: "Recommendation",
+			Fields: []detailField{
+				{Label: "Workload", Value: f.Title},
+				{Label: "Detail", Value: f.Detail},
+			},
+		},
+		{
+			Title:       "How to act",
+			Description: "Adjust spec.resources.requests/limits on the affected container, or right-size the workload based on the observed usage. Idle requests reserve cluster capacity that other pods cannot use.",
+		},
+	}
+	showDetailsDialog(v.ctx, fmt.Sprintf("%s — %s", label, f.Title), f.Severity, sections)
 }
 
 func bytesQuantity(value int64) string {

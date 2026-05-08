@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SilkePilon/Orchestrator/internal/ui/common"
+	"github.com/SilkePilon/Orchestrator/widget"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/SilkePilon/Orchestrator/internal/ui/common"
-	"github.com/SilkePilon/Orchestrator/widget"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -20,9 +20,11 @@ type HealthOverviewView struct {
 	*adw.ToolbarView
 	*common.ClusterState
 	ctx     context.Context
+	page    *adw.PreferencesPage
 	refresh *gtk.Button
 	status  *gtk.Label
-	results *gtk.Box
+
+	groups []*adw.PreferencesGroup
 }
 
 type clusterHealthOverview struct {
@@ -51,58 +53,44 @@ type healthFinding struct {
 }
 
 func NewHealthOverviewView(ctx context.Context, state *common.ClusterState) *HealthOverviewView {
+	tv, page, refresh, status := toolPage(state, "Cluster Health", "Refresh cluster health")
 	view := &HealthOverviewView{
-		ToolbarView:  adw.NewToolbarView(),
+		ToolbarView:  tv,
 		ClusterState: state,
 		ctx:          ctx,
+		page:         page,
+		refresh:      refresh,
+		status:       status,
 	}
-	view.AddCSSClass("view")
-	view.SetTopBarStyle(adw.ToolbarRaised)
-
-	header := adw.NewHeaderBar()
-	header.SetTitleWidget(adw.NewWindowTitle("Health", state.ClusterPreferences.Value().Name))
-
-	view.refresh = gtk.NewButtonFromIconName("view-refresh-symbolic")
-	view.refresh.AddCSSClass("flat")
-	view.refresh.SetTooltipText("Refresh cluster health")
+	view.status.SetText("Loading…")
 	view.refresh.ConnectClicked(view.refreshHealth)
-	header.PackEnd(view.refresh)
-	view.AddTopBar(header)
-
-	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	page := adw.NewPreferencesPage()
-	scroll.SetChild(page)
-	view.SetContent(scroll)
-
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("Cluster Health")
-	group.SetDescription("A quick operational overview of nodes, workloads, pod restarts, and recent warning events.")
-	page.Add(group)
-
-	view.status = gtk.NewLabel("Loading cluster health...")
-	view.status.SetHAlign(gtk.AlignStart)
-	view.status.AddCSSClass("dim-label")
-	group.Add(view.status)
-
-	view.results = gtk.NewBox(gtk.OrientationVertical, 12)
-	group.Add(view.results)
-
 	view.refreshHealth()
 	return view
 }
 
+func (v *HealthOverviewView) clearGroups() {
+	for _, g := range v.groups {
+		v.page.Remove(g)
+	}
+	v.groups = nil
+}
+
+func (v *HealthOverviewView) addGroup(g *adw.PreferencesGroup) {
+	v.page.Add(g)
+	v.groups = append(v.groups, g)
+}
+
 func (v *HealthOverviewView) refreshHealth() {
 	v.refresh.SetSensitive(false)
-	v.status.SetText("Refreshing cluster health...")
-	clearBox(v.results)
+	v.status.SetText("Refreshing…")
+	v.clearGroups()
 
 	go func() {
 		overview, err := v.collectHealthOverview()
 		glib.IdleAdd(func() {
 			v.refresh.SetSensitive(true)
 			if err != nil {
-				v.status.SetText("Could not refresh cluster health.")
+				v.status.SetText("Failed")
 				widget.ShowErrorDialog(v.ctx, "Cluster health failed", err)
 				return
 			}
@@ -249,44 +237,87 @@ func (v *HealthOverviewView) collectWarningEvents(ctx context.Context, overview 
 }
 
 func (v *HealthOverviewView) renderHealthOverview(overview *clusterHealthOverview) {
-	clearBox(v.results)
+	v.clearGroups()
 
-	summary := benchmarkCard()
-	summary.Append(sectionLabel("Summary"))
-	summary.Append(barRow("Nodes ready", fmt.Sprintf("%d / %d", overview.NodesReady, overview.NodesTotal), float64(overview.NodesReady), float64(max(overview.NodesTotal, 1))))
-	summary.Append(barRow("Pods running", fmt.Sprintf("%d / %d", overview.PodsRunning, overview.PodsTotal), float64(overview.PodsRunning), float64(max(overview.PodsTotal, 1))))
-	summary.Append(textRow("Pending pods", fmt.Sprintf("%d", overview.PodsPending)))
-	summary.Append(textRow("Failed pods", fmt.Sprintf("%d", overview.PodsFailed)))
-	summary.Append(textRow("Container restarts", fmt.Sprintf("%d", overview.TotalRestarts)))
-	v.results.Append(summary)
-
-	workloads := benchmarkCard()
-	workloads.Append(sectionLabel("Workloads"))
-	workloads.Append(barRow("Deployments", fmt.Sprintf("%d / %d healthy", overview.DeploymentsHealthy, overview.DeploymentsTotal), float64(overview.DeploymentsHealthy), float64(max(overview.DeploymentsTotal, 1))))
-	workloads.Append(barRow("StatefulSets", fmt.Sprintf("%d / %d healthy", overview.StatefulSetsHealthy, overview.StatefulSetsTotal), float64(overview.StatefulSetsHealthy), float64(max(overview.StatefulSetsTotal, 1))))
-	workloads.Append(barRow("DaemonSets", fmt.Sprintf("%d / %d healthy", overview.DaemonSetsHealthy, overview.DaemonSetsTotal), float64(overview.DaemonSetsHealthy), float64(max(overview.DaemonSetsTotal, 1))))
-	appendFindings(workloads, overview.WorkloadWarnings, "No workload or node warnings found.")
-	v.results.Append(workloads)
-
-	pods := benchmarkCard()
-	pods.Append(sectionLabel("Pod Issues"))
-	appendFindings(pods, overview.PodWarnings, "No pod crash, waiting, or restart warnings found.")
-	v.results.Append(pods)
-
-	events := benchmarkCard()
-	events.Append(sectionLabel("Recent Warning Events"))
-	appendFindings(events, overview.RecentWarningEvents, "No recent warning events found.")
-	v.results.Append(events)
-}
-
-func appendFindings(card *gtk.Box, findings []healthFinding, empty string) {
-	if len(findings) == 0 {
-		card.Append(textRow("Status", empty))
-		return
+	// Overview tiles
+	overviewGroup := toolGroup("Overview", "Operational state of the cluster at a glance.")
+	nodeStyle, _ := healthBadge(overview.NodesReady, overview.NodesTotal)
+	podStyle, _ := healthBadge(overview.PodsRunning, overview.PodsTotal)
+	pendingStyle := "accent"
+	if overview.PodsPending > 0 {
+		pendingStyle = "warning"
 	}
-	for _, finding := range findings {
-		card.Append(textRow(finding.Title, finding.Text))
+	failedStyle := "success"
+	if overview.PodsFailed > 0 {
+		failedStyle = "error"
 	}
+	restartStyle := "success"
+	if overview.TotalRestarts > 0 {
+		restartStyle = "warning"
+	}
+	statTilesGroup(overviewGroup, []statTile{
+		{Value: fmt.Sprintf("%d / %d", overview.NodesReady, overview.NodesTotal), Caption: "Nodes ready", Style: nodeStyle},
+		{Value: fmt.Sprintf("%d / %d", overview.PodsRunning, overview.PodsTotal), Caption: "Pods running", Style: podStyle},
+		{Value: fmt.Sprintf("%d", overview.PodsPending), Caption: "Pending pods", Style: pendingStyle},
+		{Value: fmt.Sprintf("%d", overview.PodsFailed), Caption: "Failed pods", Style: failedStyle},
+		{Value: fmt.Sprintf("%d", overview.TotalRestarts), Caption: "Container restarts", Style: restartStyle},
+	})
+	v.addGroup(overviewGroup)
+
+	// Workload health (progress rows)
+	workloadGroup := toolGroup("Workloads", "Replica health for Deployments, StatefulSets, and DaemonSets.")
+	workloadGroup.Add(progressRow("Deployments",
+		fmt.Sprintf("%d / %d healthy", overview.DeploymentsHealthy, overview.DeploymentsTotal),
+		float64(overview.DeploymentsHealthy), float64(max(overview.DeploymentsTotal, 1))))
+	workloadGroup.Add(progressRow("StatefulSets",
+		fmt.Sprintf("%d / %d healthy", overview.StatefulSetsHealthy, overview.StatefulSetsTotal),
+		float64(overview.StatefulSetsHealthy), float64(max(overview.StatefulSetsTotal, 1))))
+	workloadGroup.Add(progressRow("DaemonSets",
+		fmt.Sprintf("%d / %d healthy", overview.DaemonSetsHealthy, overview.DaemonSetsTotal),
+		float64(overview.DaemonSetsHealthy), float64(max(overview.DaemonSetsTotal, 1))))
+	v.addGroup(workloadGroup)
+
+	// Workload warnings
+	warningsGroup := toolGroup("Workload & Node Warnings",
+		"Nodes that are not Ready and workloads with missing replicas.")
+	if len(overview.WorkloadWarnings) == 0 {
+		emptyStatusGroup(warningsGroup, "All workloads healthy",
+			"Every node is Ready and all workloads have their desired replicas available.",
+			"emblem-default-symbolic")
+	} else {
+		for _, f := range overview.WorkloadWarnings {
+			warningsGroup.Add(findingRow(f.Title, f.Text, "dialog-warning-symbolic", "Warning", "warning"))
+		}
+	}
+	v.addGroup(warningsGroup)
+
+	// Pod issues
+	podGroup := toolGroup("Pod Issues",
+		"Pods stuck in waiting, failed, or restart-loop states.")
+	if len(overview.PodWarnings) == 0 {
+		emptyStatusGroup(podGroup, "No pod issues",
+			"No pods are crashing, waiting, or restarting.",
+			"emblem-default-symbolic")
+	} else {
+		for _, f := range overview.PodWarnings {
+			podGroup.Add(findingRow(f.Title, f.Text, "dialog-warning-symbolic", "Issue", "warning"))
+		}
+	}
+	v.addGroup(podGroup)
+
+	// Recent warning events
+	eventsGroup := toolGroup("Recent Warning Events",
+		"The most recent Kubernetes Warning events from across the cluster.")
+	if len(overview.RecentWarningEvents) == 0 {
+		emptyStatusGroup(eventsGroup, "No recent warnings",
+			"There are no recent warning events in the cluster.",
+			"emblem-default-symbolic")
+	} else {
+		for _, f := range overview.RecentWarningEvents {
+			eventsGroup.Add(findingRow(f.Title, f.Text, "dialog-error-symbolic", "Warning", "error"))
+		}
+	}
+	v.addGroup(eventsGroup)
 }
 
 func podRestartCount(pod corev1.Pod) int32 {

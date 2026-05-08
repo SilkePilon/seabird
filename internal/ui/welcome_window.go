@@ -120,15 +120,54 @@ func (w *WelcomeWindow) createContent(first bool) *adw.NavigationView {
 
 		for i, c := range w.Preferences.Value().Clusters {
 			cluster := c
+			prefs := cluster.Value()
 			row := adw.NewActionRow()
-			row.SetTitle(cluster.Value().Name)
+			row.SetTitle(prefs.Name)
 			row.SetActivatable(true)
 
-			if kubeconfig := c.Value().Kubeconfig; kubeconfig != nil {
-				label := gtk.NewLabel(kubeconfig.Path)
-				label.AddCSSClass("dim-label")
-				label.SetHAlign(gtk.AlignStart)
-				row.AddSuffix(label)
+			subtitle := prefs.Host
+			if subtitle == "" && prefs.Kubeconfig != nil {
+				subtitle = prefs.Kubeconfig.Path
+			}
+			if subtitle != "" {
+				row.SetSubtitle(subtitle)
+			}
+
+			icon := gtk.NewImageFromIconName("network-server-symbolic")
+			icon.AddCSSClass("dim-label")
+			row.AddPrefix(icon)
+
+			addPill := func(text, style string) {
+				pill := gtk.NewLabel(text)
+				pill.AddCSSClass("severity-pill")
+				if style != "" {
+					pill.AddCSSClass(style)
+				}
+				pill.SetVAlign(gtk.AlignCenter)
+				row.AddSuffix(pill)
+			}
+			if prefs.Bootstrap != nil {
+				label := strings.ToLower(prefs.Bootstrap.Distribution)
+				if label == "" {
+					label = "k3s"
+				}
+				if v := strings.TrimPrefix(prefs.Bootstrap.Version, "v"); v != "" {
+					label = fmt.Sprintf("%s %s", label, v)
+				}
+				addPill(label, "accent")
+				if n := len(prefs.Bootstrap.Nodes); n > 0 {
+					nodes := "node"
+					if n != 1 {
+						nodes = "nodes"
+					}
+					addPill(fmt.Sprintf("%d %s", n, nodes), "")
+				}
+			}
+			if prefs.ReadOnly {
+				addPill("Read-only", "warning")
+			}
+			if prefs.SkipTlsVerification {
+				addPill("Insecure TLS", "error")
 			}
 
 			spinner := widget.NewFallbackSpinner(gtk.NewImageFromIconName("go-next-symbolic"))
